@@ -12,7 +12,7 @@ const PUBLIC_PATHS = [
 // Better Auth session cookie name
 const SESSION_COOKIE = "better-auth.session_token";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow public paths
