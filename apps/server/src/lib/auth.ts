@@ -8,7 +8,7 @@ if (!authSecret && process.env.NODE_ENV === "production") {
 }
 
 export const auth = betterAuth({
-  secret: authSecret ?? "dev-secret-change-in-production",
+  secret: authSecret ?? "dev-secret-change-in-production-x",
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3100",
   database: drizzleAdapter(getDb(), {
     provider: "pg",
