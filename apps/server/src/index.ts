@@ -2,6 +2,7 @@ import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { app } from "./app.js";
 import { initAppTables } from "@archon/db";
+import { seedSystemTools } from "@archon/tool-policy";
 import { startHeartbeatWorker } from "./workers/heartbeat.worker.js";
 import { startBudgetCheckWorker } from "./workers/budget-check.worker.js";
 
@@ -9,6 +10,7 @@ const port = Number(process.env.PORT ?? 3100);
 
 async function main() {
   await initAppTables();
+  await seedSystemTools();
 
   const valKeyUrl = process.env.VALKEY_URL;
   if (valKeyUrl) {

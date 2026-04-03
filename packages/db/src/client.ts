@@ -145,5 +145,27 @@ export async function initAppTables(): Promise<void> {
       token_estimate INTEGER,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS tool_registry (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL,
+      description TEXT,
+      platforms TEXT[] NOT NULL DEFAULT '{}',
+      config_schema JSONB DEFAULT '{}',
+      is_system BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS tool_permissions (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      agent_role TEXT,
+      agent_id TEXT REFERENCES agents(id) ON DELETE CASCADE,
+      tool_id TEXT NOT NULL REFERENCES tool_registry(id) ON DELETE CASCADE,
+      allow BOOLEAN NOT NULL DEFAULT true,
+      config_override JSONB DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }
