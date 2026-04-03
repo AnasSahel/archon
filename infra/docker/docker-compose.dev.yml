@@ -1,0 +1,49 @@
+name: archon-dev
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: archon-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: platform_dev
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform_dev_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: archon-valkey
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Optional: local LLM models (Nomic embeddings, Llama models...)
+  # Uncomment if Ollama is not installed locally
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: archon-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+
+volumes:
+  postgres_data:
+  valkey_data:
+  # ollama_data:
