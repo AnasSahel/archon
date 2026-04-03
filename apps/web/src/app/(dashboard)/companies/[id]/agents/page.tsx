@@ -57,8 +57,8 @@ export default function AgentsPage() {
 
   const loadAgents = useCallback(() => {
     if (!companyId) return;
-    return apiFetch<FullAgent[]>(`/api/companies/${companyId}/agents`)
-      .then(setAgents)
+    return apiFetch<{ data: FullAgent[] }>(`/api/companies/${companyId}/agents?pageSize=100`)
+      .then((res) => setAgents(res.data))
       .catch((err) => setError(err.message));
   }, [companyId]);
 
@@ -67,11 +67,11 @@ export default function AgentsPage() {
     setLoading(true);
     Promise.all([
       apiFetch<CompanyInfo>(`/api/companies/${companyId}`),
-      apiFetch<FullAgent[]>(`/api/companies/${companyId}/agents`),
+      apiFetch<{ data: FullAgent[] }>(`/api/companies/${companyId}/agents?pageSize=100`),
     ])
-      .then(([comp, agentList]) => {
+      .then(([comp, agentRes]) => {
         setCompany(comp);
-        setAgents(agentList);
+        setAgents(agentRes.data);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));

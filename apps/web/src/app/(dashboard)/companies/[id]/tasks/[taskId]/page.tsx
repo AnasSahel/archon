@@ -97,12 +97,12 @@ export default function TaskDetailPage() {
     setLoading(true);
     Promise.all([
       apiFetch<CompanyInfo>(`/api/companies/${companyId}`),
-      apiFetch<Agent[]>(`/api/companies/${companyId}/agents`),
+      apiFetch<{ data: Agent[] }>(`/api/companies/${companyId}/agents?pageSize=100`),
       apiFetch<TaskDetail>(`/api/companies/${companyId}/tasks/${taskId}`),
     ])
-      .then(([comp, agentList, taskData]) => {
+      .then(([comp, agentRes, taskData]) => {
         setCompany(comp);
-        setAgents(agentList);
+        setAgents(agentRes.data);
         setTask(taskData);
       })
       .catch((err: Error) => setError(err.message))

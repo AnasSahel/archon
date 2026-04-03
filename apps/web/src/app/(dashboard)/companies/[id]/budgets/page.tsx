@@ -107,12 +107,12 @@ export default function BudgetsPage() {
     Promise.all([
       apiFetch<CompanyInfo>(`/api/companies/${companyId}`),
       apiFetch<BudgetSummary[]>(`/api/companies/${companyId}/budgets`),
-      apiFetch<Agent[]>(`/api/companies/${companyId}/agents`),
+      apiFetch<{ data: Agent[] }>(`/api/companies/${companyId}/agents?pageSize=100`),
     ])
-      .then(([comp, budgetList, agentList]) => {
+      .then(([comp, budgetList, agentRes]) => {
         setCompany(comp);
         setBudgets(budgetList);
-        setAgents(agentList);
+        setAgents(agentRes.data);
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));

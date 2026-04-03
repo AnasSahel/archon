@@ -417,11 +417,20 @@ export function startHeartbeatWorker(): Worker {
         throw err;
       }
     },
-    { connection: getRedis() }
+    {
+      connection: getRedis(),
+      concurrency: parseInt(process.env.HEARTBEAT_CONCURRENCY ?? "5", 10),
+    }
   );
 
   worker.on("failed", (job, err) => {
-    console.error(`[heartbeat] Job ${job?.id} failed:`, err);
+    const attempt = job?.attemptsMade ?? 0;
+    const maxAttempts = job?.opts?.attempts ?? 1;
+    if (attempt < maxAttempts) {
+      console.warn(`[heartbeat] Job ${job?.id} failed (attempt ${attempt}/${maxAttempts}), will retry:`, err.message);
+    } else {
+      console.error(`[heartbeat] Job ${job?.id} permanently failed after ${attempt} attempts:`, err);
+    }
   });
 
   return worker;

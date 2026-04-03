@@ -10,6 +10,7 @@ import { snapshotRouter } from "./routes/snapshot.js";
 import { toolsRouter } from "./routes/tools.js";
 import { streamRouter } from "./routes/stream.js";
 import { auth } from "./lib/auth.js";
+import { rateLimitMiddleware } from "./middleware/rate-limit.js";
 
 export const app = new Hono();
 
@@ -24,6 +25,12 @@ app.use(
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })
 );
+
+// Rate limiting on all API routes (skip auth to avoid lockout)
+app.use("/api/*", async (c, next) => {
+  if (c.req.path.startsWith("/api/auth/")) return next();
+  return rateLimitMiddleware(c, next);
+});
 
 // Auth routes (Better Auth handler)
 app.on(["GET", "POST"], "/api/auth/**", (c) => {
