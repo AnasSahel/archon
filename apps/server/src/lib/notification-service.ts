@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { subscribe, dispatch } from "@archon/notifications";
+import { subscribe } from "@archon/notifications";
 import { sendSlackNotification } from "@archon/notifications";
 import { sendEmail } from "@archon/notifications";
 import { getDb, taskComments } from "@archon/db";
