@@ -97,6 +97,7 @@ export async function initAppTables(): Promise<void> {
       role TEXT NOT NULL,
       adapter_type TEXT NOT NULL DEFAULT 'http',
       llm_config JSONB NOT NULL DEFAULT '{}',
+      adapter_config JSONB DEFAULT '{}',
       heartbeat_cron TEXT,
       monthly_budget_usd NUMERIC(10,4) DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',

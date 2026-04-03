@@ -80,7 +80,7 @@ export default function TaskDetailPage() {
 
   const [changingStatus, setChangingStatus] = useState(false);
 
-  const [hitlAction, setHitlAction] = useState<"approve" | "reject" | "comment" | null>(null);
+  const [hitlAction, setHitlAction] = useState<"approve" | "reject" | "comment" | "escalate" | null>(null);
   const [hitlFeedback, setHitlFeedback] = useState("");
   const [submittingHitl, setSubmittingHitl] = useState(false);
   const [hitlError, setHitlError] = useState<string | null>(null);
@@ -314,6 +314,12 @@ export default function TaskDetailPage() {
               >
                 Comment
               </button>
+              <button
+                onClick={() => setHitlAction("escalate")}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-md transition-colors"
+              >
+                Escalate
+              </button>
             </div>
           ) : (
             <form onSubmit={handleHitlSubmit} className="space-y-3">
@@ -322,9 +328,11 @@ export default function TaskDetailPage() {
                   ? "Approve this task"
                   : hitlAction === "reject"
                   ? "Reject this task"
+                  : hitlAction === "escalate"
+                  ? "Escalate this task"
                   : "Add a comment"}
               </p>
-              {(hitlAction === "reject" || hitlAction === "comment") && (
+              {(hitlAction === "reject" || hitlAction === "comment" || hitlAction === "escalate") && (
                 <textarea
                   value={hitlFeedback}
                   onChange={(e) => setHitlFeedback(e.target.value)}
@@ -333,6 +341,8 @@ export default function TaskDetailPage() {
                   placeholder={
                     hitlAction === "reject"
                       ? "Optional: explain why you're rejecting…"
+                      : hitlAction === "escalate"
+                      ? "Optional: reason for escalation…"
                       : "Your comment for the agent…"
                   }
                   className="w-full px-3 py-2 text-sm border border-amber-300 dark:border-amber-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
@@ -350,6 +360,8 @@ export default function TaskDetailPage() {
                       ? "bg-green-600 hover:bg-green-700"
                       : hitlAction === "reject"
                       ? "bg-red-600 hover:bg-red-700"
+                      : hitlAction === "escalate"
+                      ? "bg-orange-600 hover:bg-orange-700"
                       : "bg-indigo-600 hover:bg-indigo-700"
                   }`}
                 >

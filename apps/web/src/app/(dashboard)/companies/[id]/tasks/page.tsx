@@ -155,6 +155,9 @@ export default function TasksPage() {
     return agent ? agent.name : agentId;
   }
 
+  const awaitingHumanCount = tasks.filter((t) => t.status === "awaiting_human").length;
+  const escalatedCount = tasks.filter((t) => t.status === "escalated").length;
+
   return (
     <div>
       {/* Header */}
@@ -180,6 +183,37 @@ export default function TasksPage() {
           </button>
         )}
       </div>
+
+      {/* HITL Review Banner */}
+      {(awaitingHumanCount > 0 || escalatedCount > 0) && (
+        <div className={`mb-6 rounded-lg border p-4 flex items-center gap-3 ${
+          escalatedCount > 0
+            ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700"
+            : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"
+        }`}>
+          <span className="text-lg">
+            {escalatedCount > 0 ? "🔴" : "🟡"}
+          </span>
+          <div className="text-sm">
+            {escalatedCount > 0 && (
+              <span className="font-semibold text-red-700 dark:text-red-300 mr-3">
+                {escalatedCount} escalated
+              </span>
+            )}
+            {awaitingHumanCount > 0 && (
+              <span className="font-semibold text-amber-700 dark:text-amber-300">
+                {awaitingHumanCount} awaiting your review
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setStatusFilter("awaiting_human")}
+            className="ml-auto text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
+          >
+            Show pending →
+          </button>
+        </div>
+      )}
 
       {/* Create Task Form */}
       {showCreateForm && (

@@ -30,6 +30,11 @@ function generateApiKey(): { raw: string; hash: string; prefix: string } {
   return { raw, hash, prefix };
 }
 
+const adapterConfigSchema = z.object({
+  url: z.string().optional(),
+  reviewPolicy: z.enum(["always", "never"]).or(z.string().regex(/^if_cost_above_\d+(?:\.\d+)?$/)).optional(),
+}).passthrough();
+
 const createAgentSchema = z.object({
   name: z.string().min(1).max(255),
   role: z.string().min(1).max(255),
@@ -38,6 +43,7 @@ const createAgentSchema = z.object({
   llmConfig: z
     .object({ provider: z.string(), model: z.string() })
     .default({ provider: "anthropic", model: "claude-opus-4-5" }),
+  adapterConfig: adapterConfigSchema.optional(),
   heartbeatCron: z.string().optional(),
   monthlyBudgetUsd: z.string().optional(),
   workspacePath: z.string().optional(),
@@ -49,6 +55,7 @@ const updateAgentSchema = z.object({
   parentAgentId: z.string().nullable().optional(),
   adapterType: z.enum(["claude_code", "codex", "opencode", "http"]).optional(),
   llmConfig: z.object({ provider: z.string(), model: z.string() }).optional(),
+  adapterConfig: adapterConfigSchema.optional(),
   heartbeatCron: z.string().nullable().optional(),
   monthlyBudgetUsd: z.string().optional(),
   workspacePath: z.string().nullable().optional(),
@@ -101,6 +108,7 @@ agentsRouter.post(
       role: body.role,
       adapterType: body.adapterType,
       llmConfig: body.llmConfig,
+      adapterConfig: body.adapterConfig ?? {},
       heartbeatCron: body.heartbeatCron ?? null,
       monthlyBudgetUsd: body.monthlyBudgetUsd ?? "0",
       workspacePath: body.workspacePath ?? null,
@@ -144,6 +152,7 @@ agentsRouter.patch(
     if (body.parentAgentId !== undefined) updates.parentAgentId = body.parentAgentId;
     if (body.adapterType !== undefined) updates.adapterType = body.adapterType;
     if (body.llmConfig !== undefined) updates.llmConfig = body.llmConfig;
+    if (body.adapterConfig !== undefined) updates.adapterConfig = body.adapterConfig;
     if (body.heartbeatCron !== undefined) updates.heartbeatCron = body.heartbeatCron;
     if (body.monthlyBudgetUsd !== undefined) updates.monthlyBudgetUsd = body.monthlyBudgetUsd;
     if (body.workspacePath !== undefined) updates.workspacePath = body.workspacePath;

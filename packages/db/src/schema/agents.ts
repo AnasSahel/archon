@@ -9,6 +9,7 @@ export const agents = pgTable("agents", {
   role: text("role").notNull(),
   adapterType: text("adapter_type").notNull().default("http"),  // claude_code | codex | opencode | http
   llmConfig: jsonb("llm_config").notNull().default({}),  // { provider, model }
+  adapterConfig: jsonb("adapter_config").default({}),  // { url, reviewPolicy, ... }
   heartbeatCron: text("heartbeat_cron"),
   monthlyBudgetUsd: numeric("monthly_budget_usd", { precision: 10, scale: 4 }).default("0"),
   status: text("status").notNull().default("active"),  // active | paused | terminated

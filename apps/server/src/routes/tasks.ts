@@ -7,6 +7,7 @@ import { getDb, tasks, taskComments, auditLog, companyMembers } from "@archon/db
 import { sessionMiddleware } from "../middleware/session.js";
 import { writeAuditEntry } from "../lib/audit.js";
 import { transitionHitl } from "../lib/hitl-service.js";
+import { enqueueHeartbeat } from "../lib/heartbeat-queue.js";
 import type { HitlEvent } from "@archon/hitl";
 
 export const tasksRouter = new Hono();
@@ -278,9 +279,9 @@ tasksRouter.post(
   }
 );
 
-// POST /companies/:companyId/tasks/:taskId/review — HITL approve/reject/comment (board only)
+// POST /companies/:companyId/tasks/:taskId/review — HITL approve/reject/comment/escalate (board only)
 const reviewSchema = z.object({
-  action: z.enum(["approve", "reject", "comment"]),
+  action: z.enum(["approve", "reject", "comment", "escalate"]),
   feedback: z.string().optional(),
 });
 
@@ -321,13 +322,48 @@ tasksRouter.post(
     };
 
     let event: HitlEvent;
+    let commentType: "approve" | "reject" | "escalate" | "message" = "message";
+
     if (body.action === "approve") {
       event = { type: "APPROVE" };
+      commentType = "approve";
     } else if (body.action === "reject") {
       const rejectEvent: { type: "REJECT"; feedback?: string } = { type: "REJECT" };
       if (body.feedback) rejectEvent.feedback = body.feedback;
       event = rejectEvent;
+      commentType = "reject";
+    } else if (body.action === "escalate") {
+      // Manual escalation by board — skip XState, go directly to escalated
+      await db
+        .update(tasks)
+        .set({ status: "escalated", updatedAt: new Date() })
+        .where(eq(tasks.id, taskId));
+
+      await db.insert(taskComments).values({
+        id: randomUUID(),
+        taskId,
+        authorType: "human",
+        authorId: user.id,
+        content: body.feedback
+          ? `Escalated: ${body.feedback}`
+          : "Manually escalated by board member.",
+        commentType: "escalate",
+        metadata: { action: "escalate" },
+      });
+
+      await writeAuditEntry({
+        companyId,
+        entityType: "task",
+        entityId: taskId,
+        action: "task.review.escalate",
+        actorType: "human",
+        actorId: user.id,
+        diff: { action: "escalate", feedback: body.feedback },
+      });
+
+      return c.json({ snapshot: { value: "ESCALATED", context } });
     } else {
+      // comment
       if (!body.feedback) {
         return c.json({ error: "feedback is required for comment" }, 400);
       }
@@ -335,6 +371,35 @@ tasksRouter.post(
     }
 
     const snapshot = await transitionHitl(taskId, context, event);
+
+    // Save review action as comment
+    const commentContent =
+      body.action === "approve"
+        ? "Approved by board member."
+        : body.action === "reject"
+        ? body.feedback
+          ? `Rejected: ${body.feedback}`
+          : "Rejected by board member."
+        : body.feedback ?? "";
+
+    await db.insert(taskComments).values({
+      id: randomUUID(),
+      taskId,
+      authorType: "human",
+      authorId: user.id,
+      content: commentContent,
+      commentType,
+      metadata: { action: body.action, feedback: body.feedback },
+    });
+
+    // If XState transitioned back to RUNNING, re-enqueue heartbeat so agent resumes
+    if (snapshot.value === "RUNNING" && task.agentId) {
+      await enqueueHeartbeat({
+        agentId: task.agentId,
+        companyId,
+        taskId,
+      });
+    }
 
     await writeAuditEntry({
       companyId,
