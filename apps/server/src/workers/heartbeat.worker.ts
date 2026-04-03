@@ -1,13 +1,16 @@
 import { Worker, type Job } from "bullmq";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { getRedis } from "../lib/valkey.js";
 import { resolveExecutionMode } from "../runtime/execution-router.js";
+import { runViaDocker } from "../runtime/docker-runner.js";
+import { writeToolPolicy } from "../runtime/tool-policy-writer.js";
 import { dispatch } from "@archon/notifications";
-import { getDb, agents, tasks, taskComments, heartbeats } from "@archon/db";
+import { getDb, agents, tasks, taskComments, heartbeats, agentApiKeys } from "@archon/db";
 import { eq } from "drizzle-orm";
 import { trackCost } from "../routes/budgets.js";
 import { transitionHitl, getHitlSnapshot } from "../lib/hitl-service.js";
 import { scheduleHitlEscalation } from "./hitl-escalation.worker.js";
+import type { AdapterType } from "@archon/tool-policy";
 
 export interface HeartbeatJobData {
   agentId: string;
@@ -20,6 +23,33 @@ export interface HeartbeatJobData {
 // Token pricing defaults (per 1M tokens)
 const PRICE_INPUT_PER_M = 3.0;   // $3 / 1M input tokens
 const PRICE_OUTPUT_PER_M = 15.0; // $15 / 1M output tokens
+
+// Docker image names per adapter type
+const DOCKER_IMAGE_MAP: Record<string, string> = {
+  claude_code: process.env.DOCKER_IMAGE_CLAUDE ?? "archon-agent-claude:latest",
+  codex: process.env.DOCKER_IMAGE_CODEX ?? "archon-agent-codex:latest",
+  opencode: process.env.DOCKER_IMAGE_OPENCODE ?? "archon-agent-opencode:latest",
+};
+
+// Default CLI commands per adapter type
+const DOCKER_COMMAND_MAP: Record<string, string[]> = {
+  claude_code: [
+    "claude",
+    "--dangerously-skip-permissions",
+    "--print",
+    "-p",
+    "You are running in an Archon heartbeat container. Use the paperclip skill to complete your assigned tasks.",
+  ],
+  codex: ["codex", "--approval-mode", "full-auto", "Complete your assigned tasks."],
+  opencode: ["opencode", "run"],
+};
+
+function generateRunApiKey(): { raw: string; hash: string; prefix: string } {
+  const raw = "pf_" + randomBytes(16).toString("hex");
+  const hash = createHash("sha256").update(raw).digest("hex");
+  const prefix = raw.slice(0, 10);
+  return { raw, hash, prefix };
+}
 
 export function startHeartbeatWorker(): Worker {
   const worker = new Worker<HeartbeatJobData>(
@@ -90,46 +120,133 @@ export function startHeartbeatWorker(): Worker {
         let outputTokens = 0;
 
         if (mode === "docker") {
-          // Docker execution deferred to Phase C5
-          throw new Error("Docker execution not yet implemented (Phase C5)");
-        }
-
-        // Build task context, injecting any human feedback from HITL state
-        let contextText = task?.description ?? task?.title ?? "(no task context)";
-        const hitlSnapshot = task ? await getHitlSnapshot(task.id) : null;
-        const humanFeedback = hitlSnapshot?.context?.humanFeedback;
-        if (humanFeedback) {
-          contextText += `\n\n[Human feedback from previous review]: ${humanFeedback}`;
-        }
-
-        // HTTP / external adapter execution
-        if (adapterType === "http") {
-          const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
-          const url = typeof adapterCfg["url"] === "string" ? adapterCfg["url"] : null;
-          if (!url) {
-            throw new Error(`Agent ${agentId} has adapterType=http but no adapterConfig.url`);
+          const image = DOCKER_IMAGE_MAP[adapterType];
+          if (!image) {
+            throw new Error(`No Docker image configured for adapter type: ${adapterType}`);
           }
 
-          const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ agentId, taskId, context: contextText }),
+          const command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
+
+          // Generate short-lived API key for this container run
+          const { raw: runApiKey, hash, prefix } = generateRunApiKey();
+          const runKeyId = randomUUID();
+          const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+          const containerTimeoutMs =
+            typeof adapterCfg["containerTimeoutMs"] === "number"
+              ? adapterCfg["containerTimeoutMs"]
+              : parseInt(process.env.AGENT_CONTAINER_TIMEOUT_MS ?? "600000", 10);
+
+          const keyExpiresAt = new Date(Date.now() + containerTimeoutMs + 60_000);
+          await db.insert(agentApiKeys).values({
+            id: runKeyId,
+            agentId,
+            companyId: agent.companyId,
+            keyHash: hash,
+            keyPrefix: prefix,
+            scopes: ["heartbeat"],
+            expiresAt: keyExpiresAt,
           });
 
-          if (!response.ok) {
-            throw new Error(`HTTP adapter returned ${response.status}: ${await response.text()}`);
+          // Write tool policy config files into workspace before launching container
+          const workspacePath = agent.workspacePath ?? job.data.workspacePath ?? null;
+          if (workspacePath) {
+            try {
+              await writeToolPolicy({
+                companyId: agent.companyId,
+                agentId,
+                agentRole: agent.role,
+                adapterType: adapterType as AdapterType,
+                workspacePath,
+              });
+            } catch (err) {
+              console.warn(`[heartbeat] writeToolPolicy failed (non-fatal):`, err);
+            }
           }
 
-          const data = (await response.json()) as {
-            result: string;
-            usage?: { input_tokens?: number; output_tokens?: number };
+          // Build extra env vars (LLM API keys from server environment)
+          const containerEnv: Record<string, string> = {
+            PAPERCLIP_COMPANY_ID: agent.companyId,
           };
-          resultText = data.result ?? "";
-          inputTokens = data.usage?.input_tokens ?? 0;
-          outputTokens = data.usage?.output_tokens ?? 0;
+          if (taskId) containerEnv.PAPERCLIP_TASK_ID = taskId;
+          if (process.env.ANTHROPIC_API_KEY) {
+            containerEnv.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+          }
+          if (process.env.OPENAI_API_KEY) {
+            containerEnv.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+          }
+
+          // Run the container with streaming output
+          const logLines: string[] = [];
+          try {
+            await runViaDocker({
+              agentId,
+              ...(taskId !== undefined ? { taskId } : {}),
+              image,
+              command,
+              env: containerEnv,
+              apiKey: runApiKey,
+              ...(workspacePath ? { workspacePath } : {}),
+              onLog: (log) => {
+                logLines.push(log);
+                dispatch({
+                  type: "heartbeat_token",
+                  agentId,
+                  ...(taskId !== undefined ? { taskId } : {}),
+                  token: log,
+                });
+              },
+            });
+          } finally {
+            // Always revoke the short-lived key after container exits
+            await db
+              .update(agentApiKeys)
+              .set({ revokedAt: new Date() })
+              .where(eq(agentApiKeys.id, runKeyId));
+          }
+
+          resultText = logLines.join("");
+          // Token usage is not directly observable from container stdout in this phase.
+          // The agent self-reports cost via heartbeat_completed events dispatched from inside the container.
+          inputTokens = 0;
+          outputTokens = 0;
         } else {
-          // LLM-based adapters (claude_code, codex, opencode) — stub until Phase C5
-          throw new Error(`Adapter type '${adapterType}' execution not yet implemented`);
+          // Build task context, injecting any human feedback from HITL state
+          let contextText = task?.description ?? task?.title ?? "(no task context)";
+          const hitlSnapshot = task ? await getHitlSnapshot(task.id) : null;
+          const humanFeedback = hitlSnapshot?.context?.humanFeedback;
+          if (humanFeedback) {
+            contextText += `\n\n[Human feedback from previous review]: ${humanFeedback}`;
+          }
+
+          // HTTP / external adapter execution
+          if (adapterType === "http") {
+            const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+            const url = typeof adapterCfg["url"] === "string" ? adapterCfg["url"] : null;
+            if (!url) {
+              throw new Error(`Agent ${agentId} has adapterType=http but no adapterConfig.url`);
+            }
+
+            const response = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ agentId, taskId, context: contextText }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP adapter returned ${response.status}: ${await response.text()}`);
+            }
+
+            const data = (await response.json()) as {
+              result: string;
+              usage?: { input_tokens?: number; output_tokens?: number };
+            };
+            resultText = data.result ?? "";
+            inputTokens = data.usage?.input_tokens ?? 0;
+            outputTokens = data.usage?.output_tokens ?? 0;
+          } else {
+            // LLM-based adapters in non-docker mode — not yet supported
+            throw new Error(`Adapter type '${adapterType}' requires Docker mode (set DOCKER_HOST)`);
+          }
         }
 
         // Save result as task comment

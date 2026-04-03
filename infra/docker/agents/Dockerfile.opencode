@@ -1,0 +1,20 @@
+FROM golang:1.23-bookworm AS builder
+
+# Install opencode binary
+RUN go install github.com/sst/opencode@latest
+
+FROM debian:bookworm-slim
+
+COPY --from=builder /go/bin/opencode /usr/local/bin/opencode
+
+# Create workspace mount point
+RUN mkdir -p /workspace
+WORKDIR /workspace
+
+# Run as non-root user for safety
+RUN useradd -m -u 1001 agent
+RUN chown -R agent:agent /workspace
+USER agent
+
+ENTRYPOINT ["opencode"]
+CMD ["--help"]

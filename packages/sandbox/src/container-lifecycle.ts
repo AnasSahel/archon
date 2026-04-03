@@ -1,5 +1,11 @@
 import { PassThrough } from "node:stream";
 import { getDocker } from "./docker-manager.js";
+import { ensureAgentNetwork } from "./network.js";
+
+const DEFAULT_TIMEOUT_MS = parseInt(
+  process.env.AGENT_CONTAINER_TIMEOUT_MS ?? "600000",
+  10
+);
 
 export interface ContainerRunOptions {
   image: string;
@@ -8,6 +14,7 @@ export interface ContainerRunOptions {
   workspacePath?: string;
   apiKey: string;
   agentId: string;
+  timeoutMs?: number;
   onLog?: (log: string) => void;
 }
 
@@ -15,6 +22,8 @@ export async function runAgentContainer(
   opts: ContainerRunOptions
 ): Promise<{ exitCode: number }> {
   const docker = getDocker();
+  const networkName = await ensureAgentNetwork();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const envVars = Object.entries({
     ...opts.env,
@@ -34,10 +43,16 @@ export async function runAgentContainer(
     Env: envVars,
     HostConfig: {
       Binds: binds,
-      AutoRemove: true,
-      NetworkMode: "bridge",
+      AutoRemove: false, // We remove manually so we can capture exit code reliably
+      NetworkMode: networkName,
+      // Never mount the Docker socket — agents must not control the host daemon
     },
     WorkingDir: "/workspace",
+    Labels: {
+      "archon.managed": "true",
+      "archon.agent-id": opts.agentId,
+      "archon.started-at": new Date().toISOString(),
+    },
   });
 
   const stdout = new PassThrough();
@@ -59,7 +74,56 @@ export async function runAgentContainer(
 
   await container.start();
 
-  const result = (await container.wait()) as { StatusCode: number };
+  // Enforce execution timeout
+  const timeoutHandle = setTimeout(async () => {
+    opts.onLog?.(`[archon] Container timeout (${timeoutMs}ms) — killing`);
+    try {
+      await container.kill();
+    } catch {
+      // Container may have already exited
+    }
+  }, timeoutMs);
 
-  return { exitCode: result.StatusCode };
+  let exitCode: number;
+  try {
+    const result = (await container.wait()) as { StatusCode: number };
+    exitCode = result.StatusCode;
+  } finally {
+    clearTimeout(timeoutHandle);
+    // Always remove container (AutoRemove=false so we control cleanup)
+    try {
+      await container.remove({ force: true });
+    } catch {
+      // Ignore removal errors (container may already be gone)
+    }
+  }
+
+  return { exitCode };
+}
+
+/**
+ * Remove all stopped archon-managed containers that have been lingering.
+ * Called by the zombie cleanup cron job.
+ */
+export async function removeZombieContainers(): Promise<number> {
+  const docker = getDocker();
+  const containers = await docker.listContainers({
+    all: true,
+    filters: JSON.stringify({
+      label: ["archon.managed=true"],
+      status: ["exited", "dead"],
+    }),
+  });
+
+  let removed = 0;
+  for (const info of containers) {
+    try {
+      const c = docker.getContainer(info.Id);
+      await c.remove({ force: true });
+      removed++;
+    } catch {
+      // Best-effort
+    }
+  }
+  return removed;
 }

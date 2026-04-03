@@ -21,7 +21,8 @@
     "db:generate": "turbo run db:generate --filter=@archon/db",
     "db:migrate": "turbo run db:migrate --filter=@archon/db",
     "db:studio": "turbo run db:studio --filter=@archon/db",
-    "db:seed": "pnpm --filter @archon/server db:seed"
+    "db:seed": "pnpm --filter @archon/server db:seed",
+    "docker:build-agents": "bash scripts/build-agents.sh"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

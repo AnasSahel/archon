@@ -14,7 +14,8 @@ export type NotificationEvent =
       percentUsed: number;
       status: string;
     }
-  | { type: "agent_log"; agentId: string; level: string; message: string };
+  | { type: "agent_log"; agentId: string; level: string; message: string }
+  | { type: "heartbeat_token"; agentId: string; taskId?: string; token: string };
 
 type Subscriber = (event: NotificationEvent) => void;
 

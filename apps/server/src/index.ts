@@ -6,6 +6,7 @@ import { seedSystemTools } from "@archon/tool-policy";
 import { startHeartbeatWorker } from "./workers/heartbeat.worker.js";
 import { startBudgetCheckWorker } from "./workers/budget-check.worker.js";
 import { startHitlEscalationWorker } from "./workers/hitl-escalation.worker.js";
+import { startContainerCleanupWorker, scheduleContainerCleanup } from "./workers/container-cleanup.worker.js";
 
 const port = Number(process.env.PORT ?? 3010);
 
@@ -18,6 +19,8 @@ async function main() {
     startHeartbeatWorker();
     startBudgetCheckWorker();
     startHitlEscalationWorker();
+    startContainerCleanupWorker();
+    await scheduleContainerCleanup();
     console.log("[workers] BullMQ workers started");
   } else {
     console.log("[workers] VALKEY_URL not set — BullMQ workers disabled");
