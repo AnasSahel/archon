@@ -15,6 +15,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@archon/context": "workspace:^",
     "@archon/db": "workspace:^",
     "@archon/hitl": "workspace:^",
     "@archon/shared": "workspace:*",

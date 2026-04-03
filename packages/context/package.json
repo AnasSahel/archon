@@ -1,0 +1,24 @@
+{
+  "name": "@archon/context",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@archon/db": "workspace:^",
+    "drizzle-orm": "^0.39.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "@types/node": "^22.10.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:run": "vitest run --passWithNoTests"
+  }
+}

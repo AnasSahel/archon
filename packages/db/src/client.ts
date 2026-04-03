@@ -135,5 +135,15 @@ export async function initAppTables(): Promise<void> {
       started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       completed_at TIMESTAMPTZ
     );
+
+    CREATE TABLE IF NOT EXISTS agent_snapshots (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      task_id TEXT,
+      heartbeat_count INTEGER NOT NULL DEFAULT 0,
+      content JSONB NOT NULL,
+      token_estimate INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }

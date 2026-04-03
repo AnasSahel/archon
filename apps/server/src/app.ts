@@ -6,6 +6,7 @@ import { companiesRouter } from "./routes/companies.js";
 import { agentsRouter } from "./routes/agents.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { budgetsRouter } from "./routes/budgets.js";
+import { snapshotRouter } from "./routes/snapshot.js";
 import { auth } from "./lib/auth.js";
 
 export const app = new Hono();
@@ -33,6 +34,7 @@ app.route("/api", companiesRouter);
 app.route("/api", agentsRouter);
 app.route("/api", tasksRouter);
 app.route("/api", budgetsRouter);
+app.route("/api", snapshotRouter);
 
 // 404 fallback
 app.notFound((c) => c.json({ error: "Not found" }, 404));
