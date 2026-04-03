@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { StatusBadge } from "@/components/tasks/status-badge";
+import { AgentStream } from "@/components/stream/AgentStream";
 
 interface Comment {
   id: string;
@@ -268,6 +269,16 @@ export default function TaskDetailPage() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Live Agent Stream */}
+      <div className="mb-4">
+        <AgentStream
+          companyId={companyId}
+          agentId={task.agentId ?? undefined}
+          taskId={taskId}
+          onHeartbeatCompleted={loadTask}
+        />
       </div>
 
       {/* HITL Action Panel */}
