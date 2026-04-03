@@ -1,12 +1,13 @@
 import { drizzle } from "drizzle-orm/pglite";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import * as schema from "./schema/index.js";
 
 let _pglite: PGlite | null = null;
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getPGlite(): PGlite {
-  if (!_pglite) _pglite = new PGlite();
+  if (!_pglite) _pglite = new PGlite({ extensions: { vector } });
   return _pglite;
 }
 
@@ -19,6 +20,13 @@ export type Db = ReturnType<typeof getDb>;
 
 export async function initAppTables(): Promise<void> {
   const pg = getPGlite();
+
+  // Enable pgvector extension (silently skip if unavailable)
+  try {
+    await pg.exec(`CREATE EXTENSION IF NOT EXISTS vector;`);
+  } catch {
+    console.warn("[db] pgvector extension not available — vector search disabled");
+  }
 
   // Better Auth tables must exist before app tables that reference users(id)
   await pg.exec(`
@@ -194,7 +202,37 @@ export async function initAppTables(): Promise<void> {
       token_estimate INTEGER,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
 
+  // agent_memory table (pgvector — created separately, gracefully skips embedding column if vector unavailable)
+  try {
+    await pg.exec(`
+      CREATE TABLE IF NOT EXISTS agent_memory (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        embedding vector(1536),
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS agent_memory_agent_id_idx ON agent_memory(agent_id);
+    `);
+  } catch {
+    // Fallback: create without embedding column if vector type not available
+    await pg.exec(`
+      CREATE TABLE IF NOT EXISTS agent_memory (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS agent_memory_agent_id_idx ON agent_memory(agent_id);
+    `);
+    console.warn("[db] agent_memory created without vector embedding column");
+  }
+
+  await pg.exec(`
     CREATE TABLE IF NOT EXISTS tool_registry (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,

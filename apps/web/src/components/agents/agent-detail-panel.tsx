@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
 import type { AgentNode } from "./org-chart.js";
 
+type Tab = "info" | "context" | "keys";
+
 interface ApiKey {
   id: string;
   keyPrefix: string;
@@ -12,6 +14,29 @@ interface ApiKey {
   expiresAt: string | null;
   revokedAt: string | null;
   createdAt: string;
+}
+
+interface SnapshotData {
+  schema_version: "1";
+  agent_id: string;
+  task_id: string | null;
+  heartbeat_count: number;
+  mission: {
+    company_goal: string;
+    project_goal: string;
+    my_role: string;
+    current_task: string;
+  };
+  progress: {
+    status: string;
+    percent_complete: number;
+    completed_steps: string[];
+    next_steps: string[];
+  };
+  decisions: Array<{ timestamp: string; decision: string; rationale: string }>;
+  artifacts: Array<{ name: string; description: string; path?: string }>;
+  human_feedback: Array<{ timestamp: string; content: string; author: string }>;
+  context_vars: Record<string, string>;
 }
 
 interface AgentDetailPanelProps {
@@ -34,6 +59,7 @@ export function AgentDetailPanel({
   onClose,
   onAgentUpdated,
 }: AgentDetailPanelProps) {
+  const [activeTab, setActiveTab] = useState<Tab>("info");
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [keysLoading, setKeysLoading] = useState(true);
   const [generatingKey, setGeneratingKey] = useState(false);
@@ -41,6 +67,9 @@ export function AgentDetailPanel({
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<SnapshotData | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
   const isBoard = userRole === "board";
 
@@ -55,6 +84,21 @@ export function AgentDetailPanel({
   useEffect(() => {
     loadKeys();
   }, [loadKeys]);
+
+  const loadSnapshot = useCallback(() => {
+    setSnapshotLoading(true);
+    setSnapshotError(null);
+    apiFetch<SnapshotData>(`/api/agent/snapshot?agentId=${agent.id}`)
+      .then(setSnapshot)
+      .catch((err) => setSnapshotError(err.message))
+      .finally(() => setSnapshotLoading(false));
+  }, [agent.id]);
+
+  useEffect(() => {
+    if (activeTab === "context") {
+      loadSnapshot();
+    }
+  }, [activeTab, loadSnapshot]);
 
   async function handleGenerateKey() {
     setGeneratingKey(true);
@@ -115,9 +159,26 @@ export function AgentDetailPanel({
         </button>
       </div>
 
+      {/* Tab bar */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700 px-4">
+        {(["info", "context", "keys"] as Tab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-3 py-2 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
+              activeTab === tab
+                ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+                : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            }`}
+          >
+            {tab === "keys" ? "API Keys" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto">
-        {/* Agent Info */}
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        {/* Agent Info tab */}
+        {activeTab === "info" && <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
             Agent Details
           </h3>
@@ -177,10 +238,157 @@ export function AgentDetailPanel({
               </div>
             )}
           </dl>
-        </div>
+        </div>}
 
-        {/* API Keys Section */}
-        <div className="px-6 py-4">
+        {/* Context tab */}
+        {activeTab === "context" && (
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Agent Context
+              </h3>
+              <button
+                onClick={loadSnapshot}
+                disabled={snapshotLoading}
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline disabled:opacity-50"
+              >
+                {snapshotLoading ? "Loading…" : "Refresh"}
+              </button>
+            </div>
+
+            {snapshotError && (
+              <div className="mb-3 p-2 bg-red-50 dark:bg-red-900/20 rounded text-xs text-red-700 dark:text-red-400">
+                {snapshotError}
+              </div>
+            )}
+
+            {snapshotLoading && !snapshot && (
+              <p className="text-xs text-gray-400 dark:text-gray-500">Loading context…</p>
+            )}
+
+            {snapshot && (
+              <div className="space-y-4">
+                {/* Metrics bar */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 text-center">
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {snapshot.heartbeat_count}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">Heartbeats</p>
+                  </div>
+                  <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 text-center">
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                      ~{Math.ceil(JSON.stringify(snapshot).length / 4)}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">Tokens est.</p>
+                  </div>
+                </div>
+
+                {/* Progress */}
+                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Progress</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500 rounded-full transition-all"
+                        style={{ width: `${snapshot.progress.percent_complete}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                      {snapshot.progress.percent_complete}%
+                    </span>
+                  </div>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                    snapshot.progress.status === "done"
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : snapshot.progress.status === "in_progress"
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                  }`}>
+                    {snapshot.progress.status}
+                  </span>
+                </div>
+
+                {/* Mission */}
+                {(snapshot.mission.current_task || snapshot.mission.my_role) && (
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Mission</p>
+                    {snapshot.mission.my_role && (
+                      <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">
+                        <span className="font-medium">Role:</span> {snapshot.mission.my_role}
+                      </p>
+                    )}
+                    {snapshot.mission.current_task && (
+                      <p className="text-xs text-gray-600 dark:text-gray-300">
+                        <span className="font-medium">Task:</span> {snapshot.mission.current_task}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Next steps */}
+                {snapshot.progress.next_steps.length > 0 && (
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Next Steps</p>
+                    <ul className="space-y-1">
+                      {snapshot.progress.next_steps.map((step, i) => (
+                        <li key={i} className="text-xs text-gray-600 dark:text-gray-300 flex gap-1.5">
+                          <span className="text-indigo-400 shrink-0">→</span>
+                          {step}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Recent decisions */}
+                {snapshot.decisions.length > 0 && (
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                      Recent Decisions ({snapshot.decisions.length})
+                    </p>
+                    <div className="space-y-2">
+                      {snapshot.decisions.slice(-3).map((d, i) => (
+                        <div key={i} className="text-xs">
+                          <p className="text-gray-700 dark:text-gray-200 font-medium">{d.decision}</p>
+                          {d.rationale && (
+                            <p className="text-gray-400 dark:text-gray-500 mt-0.5">{d.rationale}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Artifacts */}
+                {snapshot.artifacts.length > 0 && (
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                      Artifacts ({snapshot.artifacts.length})
+                    </p>
+                    <ul className="space-y-1">
+                      {snapshot.artifacts.map((a, i) => (
+                        <li key={i} className="text-xs text-gray-600 dark:text-gray-300">
+                          <span className="font-medium">{a.name}</span>
+                          {a.path && <span className="text-gray-400 ml-1 font-mono">{a.path}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {snapshot.heartbeat_count === 0 && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">
+                    No heartbeats yet. Context will appear after the first execution.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* API Keys tab */}
+        {activeTab === "keys" && <div className="px-6 py-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
               API Keys
@@ -284,7 +492,7 @@ export function AgentDetailPanel({
               )}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );

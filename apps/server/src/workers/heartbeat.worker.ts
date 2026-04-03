@@ -11,6 +11,13 @@ import { trackCost } from "../routes/budgets.js";
 import { transitionHitl, getHitlSnapshot } from "../lib/hitl-service.js";
 import { scheduleHitlEscalation } from "./hitl-escalation.worker.js";
 import type { AdapterType } from "@archon/tool-policy";
+import {
+  loadSnapshot,
+  saveSnapshot,
+  estimateTokens,
+  shouldSummarize,
+  summarizeSnapshot,
+} from "@archon/context";
 
 export interface HeartbeatJobData {
   agentId: string;
@@ -210,6 +217,9 @@ export function startHeartbeatWorker(): Worker {
           inputTokens = 0;
           outputTokens = 0;
         } else {
+          // Load agent snapshot and inject into context
+          const agentSnapshot = await loadSnapshot(agentId, taskId ?? null);
+
           // Build task context, injecting any human feedback from HITL state
           let contextText = task?.description ?? task?.title ?? "(no task context)";
           const hitlSnapshot = task ? await getHitlSnapshot(task.id) : null;
@@ -217,6 +227,10 @@ export function startHeartbeatWorker(): Worker {
           if (humanFeedback) {
             contextText += `\n\n[Human feedback from previous review]: ${humanFeedback}`;
           }
+
+          // Append snapshot context
+          const snapshotText = JSON.stringify(agentSnapshot, null, 2);
+          contextText += `\n\n[Agent context snapshot]:\n${snapshotText}`;
 
           // HTTP / external adapter execution
           if (adapterType === "http") {
@@ -247,6 +261,32 @@ export function startHeartbeatWorker(): Worker {
             // LLM-based adapters in non-docker mode — not yet supported
             throw new Error(`Adapter type '${adapterType}' requires Docker mode (set DOCKER_HOST)`);
           }
+
+          // Update and save snapshot after HTTP execution
+          const newHeartbeatCount = agentSnapshot.heartbeat_count + 1;
+          let updatedSnapshot = {
+            ...agentSnapshot,
+            heartbeat_count: newHeartbeatCount,
+          };
+
+          // Auto-summarize every 10 heartbeats
+          if (shouldSummarize(newHeartbeatCount)) {
+            updatedSnapshot = await summarizeSnapshot(updatedSnapshot);
+            // Post "Context compressed" comment
+            if (task) {
+              await db.insert(taskComments).values({
+                id: randomUUID(),
+                taskId: task.id,
+                authorType: "agent",
+                authorId: agentId,
+                content: `**Context compressed** — heartbeat #${newHeartbeatCount}\n- Tokens after compression: ~${estimateTokens(updatedSnapshot)}`,
+                commentType: "snapshot",
+                metadata: { heartbeatId, type: "context_compressed" },
+              });
+            }
+          }
+
+          await saveSnapshot(agentId, taskId ?? null, updatedSnapshot);
         }
 
         // Save result as task comment
