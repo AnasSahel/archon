@@ -40,5 +40,33 @@ export async function initAppTables(): Promise<void> {
       invited_by TEXT,
       joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      parent_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      adapter_type TEXT NOT NULL DEFAULT 'http',
+      llm_config JSONB NOT NULL DEFAULT '{}',
+      heartbeat_cron TEXT,
+      monthly_budget_usd NUMERIC(10,4) DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      workspace_path TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_api_keys (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      key_hash TEXT NOT NULL,
+      key_prefix TEXT NOT NULL,
+      scopes TEXT[] NOT NULL DEFAULT '{}',
+      last_used_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 }
