@@ -111,5 +111,29 @@ export async function initAppTables(): Promise<void> {
       metadata JSONB DEFAULT '{}',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS agent_budgets (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      period_month TEXT NOT NULL,
+      budget_usd NUMERIC(10,4) NOT NULL,
+      spent_usd NUMERIC(10,4) NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      paused_at TIMESTAMPTZ,
+      UNIQUE(agent_id, period_month)
+    );
+
+    CREATE TABLE IF NOT EXISTS heartbeats (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      task_id TEXT,
+      status TEXT NOT NULL,
+      input_tokens INTEGER DEFAULT 0,
+      output_tokens INTEGER DEFAULT 0,
+      cost_usd NUMERIC(10,6) DEFAULT 0,
+      error TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
   `);
 }
