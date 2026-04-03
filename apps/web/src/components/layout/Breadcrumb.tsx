@@ -24,8 +24,8 @@ export function Breadcrumb() {
   const [companyName, setCompanyName] = useState<string | null>(null);
 
   const match = pathname.match(/^\/companies\/([^/]+)(.*)/);
-  const companyId = match ? match[1] : null;
-  const rest = match ? match[2] : "";
+  const companyId = match ? (match[1] ?? null) : null;
+  const rest: string = match ? (match[2] ?? "") : "";
 
   useEffect(() => {
     if (!companyId || companyId === "new") return;
@@ -50,13 +50,14 @@ export function Breadcrumb() {
 
     const segments = rest.split("/").filter(Boolean);
     for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
+      const seg = segments[i] as string;
       const label = PAGE_LABELS[seg] ?? seg;
       const isLast = i === segments.length - 1;
-      const href = isLast
-        ? undefined
-        : `/companies/${companyId}/${segments.slice(0, i + 1).join("/")}`;
-      crumbs.push({ label, href });
+      if (isLast) {
+        crumbs.push({ label });
+      } else {
+        crumbs.push({ label, href: `/companies/${companyId}/${segments.slice(0, i + 1).join("/")}` });
+      }
     }
   }
 

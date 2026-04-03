@@ -19,7 +19,7 @@ function getCompanyNavItems(companyId: string) {
 
 function extractCompanyId(pathname: string): string | null {
   const match = pathname.match(/^\/companies\/([^/]+)/);
-  return match ? match[1] : null;
+  return match ? (match[1] ?? null) : null;
 }
 
 export function Sidebar() {
