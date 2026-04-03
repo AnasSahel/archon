@@ -5,7 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { getDb, companyMembers, agents, toolPermissions } from "@archon/db";
 import { sessionMiddleware } from "../middleware/session.js";
-import { listTools, getEffectivePermissions, getAgentToolConfig } from "@archon/tool-policy";
+import { listTools, getAgentToolConfig } from "@archon/tool-policy";
 import type { AdapterType } from "@archon/tool-policy";
 
 export const toolsRouter = new Hono();

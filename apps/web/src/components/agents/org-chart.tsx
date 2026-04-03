@@ -24,13 +24,13 @@ const ADAPTER_LABELS: Record<string, string> = {
 
 interface OrgChartNodeProps {
   agent: AgentNode;
-  children: AgentNode[];
+  childAgents: AgentNode[];
   allAgents: AgentNode[];
   onSelect: (id: string) => void;
   selectedId: string | null;
 }
 
-function OrgChartNode({ agent, children, allAgents, onSelect, selectedId }: OrgChartNodeProps) {
+function OrgChartNode({ agent, childAgents, allAgents, onSelect, selectedId }: OrgChartNodeProps) {
   const isSelected = agent.id === selectedId;
   const statusColor = STATUS_COLORS[agent.status] ?? "bg-gray-100 text-gray-700";
 
@@ -60,13 +60,13 @@ function OrgChartNode({ agent, children, allAgents, onSelect, selectedId }: OrgC
         </p>
       </button>
 
-      {children.length > 0 && (
+      {childAgents.length > 0 && (
         <div className="ml-8 pl-4 border-l-2 border-gray-200 dark:border-gray-700 flex flex-col gap-3">
-          {children.map((child) => (
+          {childAgents.map((child) => (
             <OrgChartNode
               key={child.id}
               agent={child}
-              children={allAgents.filter((a) => a.parentAgentId === child.id)}
+              childAgents={allAgents.filter((a) => a.parentAgentId === child.id)}
               allAgents={allAgents}
               onSelect={onSelect}
               selectedId={selectedId}
@@ -101,7 +101,7 @@ export function OrgChart({ agents, onSelect, selectedId }: OrgChartProps) {
         <OrgChartNode
           key={root.id}
           agent={root}
-          children={agents.filter((a) => a.parentAgentId === root.id)}
+          childAgents={agents.filter((a) => a.parentAgentId === root.id)}
           allAgents={agents}
           onSelect={onSelect}
           selectedId={selectedId}

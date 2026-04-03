@@ -26,7 +26,8 @@ async function sendEmail(to: string, subject: string, html: string) {
 
 export const auth = betterAuth({
   secret: authSecret ?? "dev-secret-change-in-production-x",
-  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3100",
+  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3010",
+  trustedOrigins: [process.env.PLATFORM_URL ?? "http://localhost:3000"],
   database: drizzleAdapter(getDb(), {
     provider: "pg",
     schema: {
