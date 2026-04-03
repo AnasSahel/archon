@@ -1,12 +1,13 @@
 import { drizzle } from "drizzle-orm/pglite";
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import * as schema from "./schema/index.js";
 
 let _pglite: PGlite | null = null;
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getPGlite(): PGlite {
-  if (!_pglite) _pglite = new PGlite();
+  if (!_pglite) _pglite = new PGlite({ extensions: { vector } });
   return _pglite;
 }
 
@@ -19,6 +20,13 @@ export type Db = ReturnType<typeof getDb>;
 
 export async function initAppTables(): Promise<void> {
   const pg = getPGlite();
+
+  // Enable pgvector extension (silently skip if unavailable)
+  try {
+    await pg.exec(`CREATE EXTENSION IF NOT EXISTS vector;`);
+  } catch {
+    console.warn("[db] pgvector extension not available — vector search disabled");
+  }
 
   // Better Auth tables must exist before app tables that reference users(id)
   await pg.exec(`
@@ -97,6 +105,7 @@ export async function initAppTables(): Promise<void> {
       role TEXT NOT NULL,
       adapter_type TEXT NOT NULL DEFAULT 'http',
       llm_config JSONB NOT NULL DEFAULT '{}',
+      adapter_config JSONB DEFAULT '{}',
       heartbeat_cron TEXT,
       monthly_budget_usd NUMERIC(10,4) DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
@@ -193,7 +202,37 @@ export async function initAppTables(): Promise<void> {
       token_estimate INTEGER,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
 
+  // agent_memory table (pgvector — created separately, gracefully skips embedding column if vector unavailable)
+  try {
+    await pg.exec(`
+      CREATE TABLE IF NOT EXISTS agent_memory (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        embedding vector(1536),
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS agent_memory_agent_id_idx ON agent_memory(agent_id);
+    `);
+  } catch {
+    // Fallback: create without embedding column if vector type not available
+    await pg.exec(`
+      CREATE TABLE IF NOT EXISTS agent_memory (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS agent_memory_agent_id_idx ON agent_memory(agent_id);
+    `);
+    console.warn("[db] agent_memory created without vector embedding column");
+  }
+
+  await pg.exec(`
     CREATE TABLE IF NOT EXISTS tool_registry (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
@@ -215,5 +254,40 @@ export async function initAppTables(): Promise<void> {
       config_override JSONB DEFAULT '{}',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  // Performance indexes — all idempotent via IF NOT EXISTS
+  await pg.exec(`
+    -- Tasks: list by company + filter by status/agent
+    CREATE INDEX IF NOT EXISTS tasks_company_id_idx ON tasks(company_id);
+    CREATE INDEX IF NOT EXISTS tasks_company_status_idx ON tasks(company_id, status);
+    CREATE INDEX IF NOT EXISTS tasks_agent_id_idx ON tasks(agent_id);
+    CREATE INDEX IF NOT EXISTS tasks_updated_at_idx ON tasks(updated_at DESC);
+
+    -- Task comments: fetch thread for a task
+    CREATE INDEX IF NOT EXISTS task_comments_task_id_idx ON task_comments(task_id);
+    CREATE INDEX IF NOT EXISTS task_comments_task_created_idx ON task_comments(task_id, created_at ASC);
+
+    -- Heartbeats: list by agent
+    CREATE INDEX IF NOT EXISTS heartbeats_agent_id_idx ON heartbeats(agent_id);
+    CREATE INDEX IF NOT EXISTS heartbeats_agent_started_idx ON heartbeats(agent_id, started_at DESC);
+
+    -- Agents: list by company
+    CREATE INDEX IF NOT EXISTS agents_company_id_idx ON agents(company_id);
+
+    -- Company members: membership lookup
+    CREATE INDEX IF NOT EXISTS company_members_company_user_idx ON company_members(company_id, user_id);
+    CREATE INDEX IF NOT EXISTS company_members_user_id_idx ON company_members(user_id);
+
+    -- Agent API keys: lookup by hash for auth
+    CREATE INDEX IF NOT EXISTS agent_api_keys_hash_idx ON agent_api_keys(key_hash);
+    CREATE INDEX IF NOT EXISTS agent_api_keys_agent_id_idx ON agent_api_keys(agent_id);
+
+    -- Agent budgets: lookup by agent + month
+    CREATE INDEX IF NOT EXISTS agent_budgets_agent_month_idx ON agent_budgets(agent_id, period_month);
+
+    -- Audit log: query by company + entity
+    CREATE INDEX IF NOT EXISTS audit_log_company_id_idx ON audit_log(company_id);
+    CREATE INDEX IF NOT EXISTS audit_log_entity_idx ON audit_log(entity_type, entity_id);
   `);
 }

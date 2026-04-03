@@ -5,17 +5,24 @@ import { initAppTables } from "@archon/db";
 import { seedSystemTools } from "@archon/tool-policy";
 import { startHeartbeatWorker } from "./workers/heartbeat.worker.js";
 import { startBudgetCheckWorker } from "./workers/budget-check.worker.js";
+import { startHitlEscalationWorker } from "./workers/hitl-escalation.worker.js";
+import { startContainerCleanupWorker, scheduleContainerCleanup } from "./workers/container-cleanup.worker.js";
+import { startNotificationService } from "./lib/notification-service.js";
 
 const port = Number(process.env.PORT ?? 3010);
 
 async function main() {
   await initAppTables();
   await seedSystemTools();
+  startNotificationService();
 
   const valKeyUrl = process.env.VALKEY_URL;
   if (valKeyUrl) {
     startHeartbeatWorker();
     startBudgetCheckWorker();
+    startHitlEscalationWorker();
+    startContainerCleanupWorker();
+    await scheduleContainerCleanup();
     console.log("[workers] BullMQ workers started");
   } else {
     console.log("[workers] VALKEY_URL not set — BullMQ workers disabled");

@@ -8,7 +8,7 @@ import { sessionMiddleware } from "../middleware/session.js";
 
 export const companiesRouter = new Hono();
 
-companiesRouter.use("/companies*", sessionMiddleware);
+companiesRouter.use("*", sessionMiddleware);
 
 function generateSlug(name: string): string {
   const base = name
