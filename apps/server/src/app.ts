@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { healthRouter } from "./routes/health.js";
+import { companiesRouter } from "./routes/companies.js";
 import { auth } from "./lib/auth.js";
 
 export const app = new Hono();
@@ -25,6 +26,7 @@ app.on(["GET", "POST"], "/api/auth/**", (c) => {
 
 // Routes
 app.route("/api", healthRouter);
+app.route("/api", companiesRouter);
 
 // 404 fallback
 app.notFound((c) => c.json({ error: "Not found" }, 404));
