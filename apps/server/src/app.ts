@@ -8,6 +8,7 @@ import { tasksRouter } from "./routes/tasks.js";
 import { budgetsRouter } from "./routes/budgets.js";
 import { snapshotRouter } from "./routes/snapshot.js";
 import { toolsRouter } from "./routes/tools.js";
+import { streamRouter } from "./routes/stream.js";
 import { auth } from "./lib/auth.js";
 
 export const app = new Hono();
@@ -37,6 +38,7 @@ app.route("/api", tasksRouter);
 app.route("/api", budgetsRouter);
 app.route("/api", snapshotRouter);
 app.route("/api", toolsRouter);
+app.route("/api", streamRouter);
 
 // 404 fallback
 app.notFound((c) => c.json({ error: "Not found" }, 404));
