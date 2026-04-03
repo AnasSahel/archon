@@ -1,11 +1,14 @@
 import { getDb, getPGlite, agentMemory } from "@archon/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 export interface VectorEntry {
   id: string;
   agentId: string;
+  companyId: string;
+  type?: "snapshot" | "memory";
   content: string;
+  heartbeatCount?: number;
   embedding?: number[];
   metadata?: Record<string, unknown>;
   createdAt?: Date;
@@ -39,7 +42,10 @@ export async function upsertVector(entry: Omit<VectorEntry, "embedding">): Promi
   await db.insert(agentMemory).values({
     id,
     agentId: entry.agentId,
+    companyId: entry.companyId,
+    type: entry.type ?? "memory",
     content: entry.content,
+    heartbeatCount: entry.heartbeatCount ?? 0,
     metadata: entry.metadata ?? {},
   });
 
@@ -72,11 +78,14 @@ export async function searchVectors(
     const result = await pg.query<{
       id: string;
       agent_id: string;
+      company_id: string;
+      type: string;
       content: string;
+      heartbeat_count: number;
       metadata: Record<string, unknown>;
       created_at: Date;
     }>(
-      `SELECT id, agent_id, content, metadata, created_at
+      `SELECT id, agent_id, company_id, type, content, heartbeat_count, metadata, created_at
        FROM agent_memory
        WHERE agent_id = $1
          AND embedding IS NOT NULL
@@ -87,7 +96,10 @@ export async function searchVectors(
     return result.rows.map((r) => ({
       id: r.id,
       agentId: r.agent_id,
+      companyId: r.company_id,
+      type: r.type as "snapshot" | "memory",
       content: r.content,
+      heartbeatCount: r.heartbeat_count,
       metadata: r.metadata,
       createdAt: r.created_at,
     }));
@@ -97,12 +109,15 @@ export async function searchVectors(
     const rows = await db
       .select()
       .from(agentMemory)
-      .where(eq(agentMemory.agentId, agentId))
+      .where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.type, "memory")))
       .limit(topK);
     return rows.map((r) => ({
       id: r.id,
       agentId: r.agentId,
+      companyId: r.companyId,
+      type: r.type as "snapshot" | "memory",
       content: r.content,
+      heartbeatCount: r.heartbeatCount,
       metadata: r.metadata ?? {},
       createdAt: r.createdAt,
     }));

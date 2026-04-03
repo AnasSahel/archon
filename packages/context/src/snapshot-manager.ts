@@ -1,4 +1,4 @@
-import { getDb, agentSnapshots } from "@archon/db";
+import { getDb, agentSnapshots, agentMemory } from "@archon/db";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
@@ -81,12 +81,79 @@ export function trimSnapshot(data: SnapshotData): SnapshotData {
   };
 }
 
+/**
+ * Format snapshot as a compact human-readable prompt string for injection into
+ * the agent system prompt. Keeps token usage low by using concise formatting.
+ */
+export function toPromptString(data: SnapshotData): string {
+  const lines: string[] = ["[AGENT CONTEXT SNAPSHOT]"];
+
+  lines.push(`Heartbeat: #${data.heartbeat_count}`);
+
+  if (data.mission.my_role) lines.push(`Role: ${data.mission.my_role}`);
+  if (data.mission.current_task) lines.push(`Task: ${data.mission.current_task}`);
+  if (data.mission.project_goal) lines.push(`Project goal: ${data.mission.project_goal}`);
+
+  lines.push(`Progress: ${data.progress.status} (${data.progress.percent_complete}%)`);
+
+  if (data.progress.next_steps.length > 0) {
+    lines.push("Next steps:");
+    data.progress.next_steps.slice(0, 3).forEach((s) => lines.push(`  - ${s}`));
+  }
+
+  if (data.progress.completed_steps.length > 0) {
+    const recent = data.progress.completed_steps.slice(-3);
+    lines.push(`Completed: ${recent.join(", ")}`);
+  }
+
+  if (data.decisions.length > 0) {
+    lines.push("Recent decisions:");
+    data.decisions.slice(-3).forEach((d) =>
+      lines.push(`  [${d.timestamp.slice(0, 10)}] ${d.decision}`)
+    );
+  }
+
+  if (data.artifacts.length > 0) {
+    lines.push(`Artifacts: ${data.artifacts.map((a) => a.name).join(", ")}`);
+  }
+
+  if (data.human_feedback.length > 0) {
+    const latest = data.human_feedback[data.human_feedback.length - 1]!;
+    lines.push(`Human feedback: ${latest.content}`);
+  }
+
+  if (Object.keys(data.context_vars).length > 0) {
+    lines.push("Context vars:");
+    Object.entries(data.context_vars).forEach(([k, v]) => lines.push(`  ${k}=${v}`));
+  }
+
+  lines.push("[END CONTEXT]");
+  return lines.join("\n");
+}
+
 export async function loadSnapshot(
   agentId: string,
   taskId: string | null
 ): Promise<SnapshotData> {
   const db = getDb();
 
+  // Try agent_memory (type=snapshot) first — canonical storage for C6+
+  const memRows = await db
+    .select()
+    .from(agentMemory)
+    .where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.type, "snapshot")))
+    .orderBy(desc(agentMemory.createdAt))
+    .limit(1);
+
+  if (memRows[0]) {
+    try {
+      return JSON.parse(memRows[0].content) as SnapshotData;
+    } catch {
+      // Malformed content — fall through to agentSnapshots
+    }
+  }
+
+  // Fallback: legacy agentSnapshots table
   const rows = await db
     .select()
     .from(agentSnapshots)
@@ -109,12 +176,47 @@ export async function loadSnapshot(
 export async function saveSnapshot(
   agentId: string,
   taskId: string | null,
-  data: SnapshotData
+  data: SnapshotData,
+  companyId?: string
 ): Promise<void> {
   const db = getDb();
   const trimmed = trimSnapshot(data);
   const tokenEstimate = estimateTokens(trimmed);
+  const content = JSON.stringify(trimmed);
 
+  // Write to agent_memory (type=snapshot) when companyId is known
+  if (companyId) {
+    const existing = await db
+      .select({ id: agentMemory.id })
+      .from(agentMemory)
+      .where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.type, "snapshot")))
+      .limit(1);
+
+    if (existing[0]) {
+      // Update in place — snapshots are upserted, not appended
+      await db
+        .update(agentMemory)
+        .set({
+          content,
+          heartbeatCount: trimmed.heartbeat_count,
+          metadata: { tokenEstimate, taskId },
+          updatedAt: new Date(),
+        })
+        .where(eq(agentMemory.id, existing[0].id));
+    } else {
+      await db.insert(agentMemory).values({
+        id: randomUUID(),
+        agentId,
+        companyId,
+        type: "snapshot",
+        content,
+        heartbeatCount: trimmed.heartbeat_count,
+        metadata: { tokenEstimate, taskId },
+      });
+    }
+  }
+
+  // Also write to legacy agentSnapshots for backward compatibility
   await db.insert(agentSnapshots).values({
     id: randomUUID(),
     agentId,

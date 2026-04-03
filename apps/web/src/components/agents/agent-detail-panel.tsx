@@ -39,6 +39,14 @@ interface SnapshotData {
   context_vars: Record<string, string>;
 }
 
+interface ContextResponse {
+  snapshot: SnapshotData;
+  heartbeatCount: number;
+  tokenEstimate: number;
+  nextCompressionAt: number;
+  updatedAt: string | null;
+}
+
 interface AgentDetailPanelProps {
   agent: AgentNode & {
     llmConfig: { provider: string; model: string } | null;
@@ -68,7 +76,7 @@ export function AgentDetailPanel({
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<SnapshotData | null>(null);
+  const [contextData, setContextData] = useState<ContextResponse | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [heartbeatRunning, setHeartbeatRunning] = useState(false);
@@ -91,11 +99,11 @@ export function AgentDetailPanel({
   const loadSnapshot = useCallback(() => {
     setSnapshotLoading(true);
     setSnapshotError(null);
-    apiFetch<SnapshotData>(`/api/agent/snapshot?agentId=${agent.id}`)
-      .then(setSnapshot)
+    apiFetch<ContextResponse>(`/api/companies/${companyId}/agents/${agent.id}/context`)
+      .then(setContextData)
       .catch((err) => setSnapshotError(err.message))
       .finally(() => setSnapshotLoading(false));
-  }, [agent.id]);
+  }, [companyId, agent.id]);
 
   useEffect(() => {
     if (activeTab === "context") {
@@ -327,25 +335,33 @@ export function AgentDetailPanel({
               </div>
             )}
 
-            {snapshotLoading && !snapshot && (
+            {snapshotLoading && !contextData && (
               <p className="text-xs text-gray-400 dark:text-gray-500">Loading context…</p>
             )}
 
-            {snapshot && (
+            {contextData && (() => {
+              const snapshot = contextData.snapshot;
+              return (
               <div className="space-y-4">
                 {/* Metrics bar */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 text-center">
                     <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {snapshot.heartbeat_count}
+                      {contextData.heartbeatCount}
                     </p>
                     <p className="text-xs text-gray-400 dark:text-gray-500">Heartbeats</p>
                   </div>
                   <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 text-center">
                     <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                      ~{Math.ceil(JSON.stringify(snapshot).length / 4)}
+                      ~{contextData.tokenEstimate}
                     </p>
                     <p className="text-xs text-gray-400 dark:text-gray-500">Tokens est.</p>
+                  </div>
+                  <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 text-center">
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {contextData.nextCompressionAt}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">to compress</p>
                   </div>
                 </div>
 
@@ -442,13 +458,20 @@ export function AgentDetailPanel({
                   </div>
                 )}
 
-                {snapshot.heartbeat_count === 0 && (
+                {contextData.updatedAt && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
+                    Updated {new Date(contextData.updatedAt).toLocaleString()}
+                  </p>
+                )}
+
+                {contextData.heartbeatCount === 0 && (
                   <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-4">
                     No heartbeats yet. Context will appear after the first execution.
                   </p>
                 )}
               </div>
-            )}
+              );
+            })()}
           </div>
         )}
 

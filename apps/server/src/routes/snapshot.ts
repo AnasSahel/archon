@@ -1,15 +1,16 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { loadSnapshot, saveSnapshot } from "@archon/context";
 import { sessionMiddleware } from "../middleware/session.js";
-import { getDb, agents, companyMembers } from "@archon/db";
+import { getDb, agents, agentMemory, companyMembers } from "@archon/db";
 
 export const snapshotRouter = new Hono();
 
 // Require session auth for all snapshot routes
 snapshotRouter.use("/agent/snapshot*", sessionMiddleware);
+snapshotRouter.use("/companies/:companyId/agents/:agentId/context", sessionMiddleware);
 
 // Helper: verify user can access the given agentId (must share a company)
 async function canAccessAgent(userId: string, agentId: string): Promise<boolean> {
@@ -106,3 +107,63 @@ snapshotRouter.post(
     return c.json({ success: true }, 201);
   }
 );
+
+// GET /companies/:companyId/agents/:agentId/context
+// Returns the latest snapshot from agent_memory, plus metadata for the UI Context tab.
+snapshotRouter.get("/companies/:companyId/agents/:agentId/context", async (c) => {
+  const user = c.get("user");
+  const { companyId, agentId } = c.req.param();
+  const db = getDb();
+
+  // Verify membership
+  const [membership] = await db
+    .select()
+    .from(companyMembers)
+    .where(and(eq(companyMembers.companyId, companyId), eq(companyMembers.userId, user.id)));
+  if (!membership) return c.json({ error: "Forbidden" }, 403);
+
+  // Verify agent belongs to company
+  const [agent] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.companyId, companyId)));
+  if (!agent) return c.json({ error: "Not found" }, 404);
+
+  // Load latest snapshot from agent_memory
+  const [memRow] = await db
+    .select()
+    .from(agentMemory)
+    .where(and(eq(agentMemory.agentId, agentId), eq(agentMemory.type, "snapshot")))
+    .orderBy(desc(agentMemory.updatedAt))
+    .limit(1);
+
+  if (!memRow) {
+    // Fall back to legacy loadSnapshot
+    const snapshot = await loadSnapshot(agentId, null);
+    return c.json({
+      snapshot,
+      heartbeatCount: snapshot.heartbeat_count,
+      tokenEstimate: Math.ceil(JSON.stringify(snapshot).length / 4),
+      nextCompressionAt: 10 - (snapshot.heartbeat_count % 10),
+      updatedAt: null,
+    });
+  }
+
+  let snapshot: ReturnType<typeof JSON.parse>;
+  try {
+    snapshot = JSON.parse(memRow.content);
+  } catch {
+    return c.json({ error: "Malformed snapshot" }, 500);
+  }
+
+  const tokenEstimate = (memRow.metadata as Record<string, unknown>)?.tokenEstimate as number
+    ?? Math.ceil(memRow.content.length / 4);
+
+  return c.json({
+    snapshot,
+    heartbeatCount: memRow.heartbeatCount,
+    tokenEstimate,
+    nextCompressionAt: 10 - (memRow.heartbeatCount % 10),
+    updatedAt: memRow.updatedAt,
+  });
+});
