@@ -45,6 +45,7 @@ interface AgentDetailPanelProps {
     monthlyBudgetUsd: string | null;
     workspacePath: string | null;
     heartbeatCron: string | null;
+    adapterConfig?: Record<string, unknown> | null;
   };
   companyId: string;
   userRole: string;
@@ -70,6 +71,8 @@ export function AgentDetailPanel({
   const [snapshot, setSnapshot] = useState<SnapshotData | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [heartbeatRunning, setHeartbeatRunning] = useState(false);
+  const [heartbeatToast, setHeartbeatToast] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const isBoard = userRole === "board";
 
@@ -99,6 +102,31 @@ export function AgentDetailPanel({
       loadSnapshot();
     }
   }, [activeTab, loadSnapshot]);
+
+  async function handleRunHeartbeat() {
+    setHeartbeatRunning(true);
+    setHeartbeatToast(null);
+    try {
+      await apiFetch<{ jobId: string }>(
+        `/api/companies/${companyId}/agents/${agent.id}/heartbeat`,
+        { method: "POST", body: JSON.stringify({}) }
+      );
+      setHeartbeatToast({ ok: true, msg: "Heartbeat queued successfully" });
+      let polls = 0;
+      const poll = setInterval(() => {
+        polls++;
+        onAgentUpdated();
+        if (polls >= 5) clearInterval(poll);
+      }, 2000);
+    } catch (err) {
+      setHeartbeatToast({
+        ok: false,
+        msg: err instanceof Error ? err.message : "Failed to trigger heartbeat",
+      });
+    } finally {
+      setHeartbeatRunning(false);
+    }
+  }
 
   async function handleGenerateKey() {
     setGeneratingKey(true);
@@ -238,6 +266,43 @@ export function AgentDetailPanel({
               </div>
             )}
           </dl>
+
+          {/* Run Heartbeat */}
+          {(isBoard || userRole === "manager") && (
+            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500 dark:text-gray-400">Manual trigger</span>
+                <button
+                  onClick={handleRunHeartbeat}
+                  disabled={heartbeatRunning || agent.status === "terminated"}
+                  className="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded transition-colors flex items-center gap-1.5"
+                >
+                  {heartbeatRunning ? (
+                    <>
+                      <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      Running…
+                    </>
+                  ) : (
+                    "Run heartbeat"
+                  )}
+                </button>
+              </div>
+              {heartbeatToast && (
+                <p
+                  className={`mt-2 text-xs ${
+                    heartbeatToast.ok
+                      ? "text-green-600 dark:text-green-400"
+                      : "text-red-600 dark:text-red-400"
+                  }`}
+                >
+                  {heartbeatToast.msg}
+                </p>
+              )}
+            </div>
+          )}
         </div>}
 
         {/* Context tab */}

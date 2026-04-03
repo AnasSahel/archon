@@ -22,7 +22,8 @@
     "db:migrate": "turbo run db:migrate --filter=@archon/db",
     "db:studio": "turbo run db:studio --filter=@archon/db",
     "db:seed": "pnpm --filter @archon/server db:seed",
-    "docker:build-agents": "bash scripts/build-agents.sh"
+    "docker:build-agents": "bash scripts/build-agents.sh",
+    "echo:start": "node --import tsx/esm infra/agent-echo/index.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
