@@ -1,4 +1,4 @@
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3100";
+const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3010";
 
 export async function apiFetch<T>(
   path: string,
