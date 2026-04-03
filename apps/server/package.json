@@ -11,22 +11,25 @@
     "lint": "eslint src --ext .ts",
     "test:run": "vitest run",
     "test": "vitest",
+    "db:seed": "tsx src/seed.ts",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@archon/db": "workspace:^",
     "@archon/shared": "workspace:*",
-    "hono": "^4.6.16",
     "@hono/node-server": "^1.13.7",
+    "better-auth": "^1.5.6",
+    "dotenv": "^16.4.7",
+    "hono": "^4.6.16",
     "pino": "^9.6.0",
     "pino-http": "^10.3.0",
-    "zod": "^3.24.1",
-    "dotenv": "^16.4.7"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "typescript": "^5.7.3",
+    "@vitest/coverage-v8": "^2.1.8",
     "tsx": "^4.19.2",
-    "vitest": "^2.1.8",
-    "@vitest/coverage-v8": "^2.1.8"
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
   }
 }

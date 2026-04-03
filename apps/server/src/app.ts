@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { healthRouter } from "./routes/health.js";
+import { auth } from "./lib/auth.js";
 
 export const app = new Hono();
 
@@ -12,8 +13,15 @@ app.use(
   cors({
     origin: process.env.PLATFORM_URL ?? "http://localhost:3000",
     credentials: true,
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   })
 );
+
+// Auth routes (Better Auth handler)
+app.on(["GET", "POST"], "/api/auth/**", (c) => {
+  return auth.handler(c.req.raw);
+});
 
 // Routes
 app.route("/api", healthRouter);

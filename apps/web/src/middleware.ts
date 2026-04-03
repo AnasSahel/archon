@@ -3,6 +3,9 @@ import type { NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/register", "/forgot-password"];
 
+// Better Auth session cookie name
+const SESSION_COOKIE = "better-auth.session_token";
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -20,7 +23,14 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Auth will be enforced in Phase 2 via Better Auth session check
+  // Protect all other routes — redirect to /login if no session cookie
+  const sessionCookie = request.cookies.get(SESSION_COOKIE);
+  if (!sessionCookie?.value) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
   return NextResponse.next();
 }
 
