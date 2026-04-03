@@ -9,16 +9,14 @@ export function VerifyEmailHandler() {
   const router = useRouter();
   const token = searchParams.get("token");
   const [status, setStatus] = useState<"loading" | "success" | "error">(
-    "loading"
+    token ? "loading" : "error"
   );
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(
+    token ? "" : "Missing verification token."
+  );
 
   useEffect(() => {
-    if (!token) {
-      setStatus("error");
-      setMessage("Missing verification token.");
-      return;
-    }
+    if (!token) return;
 
     authClient.verifyEmail({ query: { token } }).then(({ error }) => {
       if (error) {
