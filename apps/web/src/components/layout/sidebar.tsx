@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth-client";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
@@ -13,6 +14,14 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: session } = authClient.useSession();
+
+  async function handleSignOut() {
+    await authClient.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
@@ -39,6 +48,29 @@ export function Sidebar() {
           );
         })}
       </nav>
+      {session?.user && (
+        <div className="px-4 py-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium shrink-0">
+              {session.user.name?.charAt(0).toUpperCase() ?? "?"}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                {session.user.name}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {session.user.email}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleSignOut}
+            className="w-full text-left px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white transition-colors duration-150"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
