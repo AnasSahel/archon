@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { getDb, tasks, taskComments, auditLog, companyMembers, agents } from "@archon/db";
+import { getDb, tasks, taskComments, auditLog, companyMembers } from "@archon/db";
 import { sessionMiddleware } from "../middleware/session.js";
 import { writeAuditEntry } from "../lib/audit.js";
 import { transitionHitl } from "../lib/hitl-service.js";

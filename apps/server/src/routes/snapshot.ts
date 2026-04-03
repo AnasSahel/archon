@@ -16,10 +16,6 @@ async function canAccessAgent(userId: string, agentId: string): Promise<boolean>
   const db = getDb();
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
   if (!agent) return false;
-  const [membership] = await db
-    .select()
-    .from(companyMembers)
-    .where(eq(companyMembers.companyId, agent.companyId));
   // Check that this user is a member of the agent's company
   const rows = await db
     .select()
