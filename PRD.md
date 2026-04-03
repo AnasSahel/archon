@@ -260,11 +260,12 @@ export function getProvider(config: AgentLLMConfig) {
 
 ### 3.5 Notification Engine
 
-**Canaux** : Slack webhook, email (Resend), push (ntfy.sh self-hosted).  
+**Canaux** : Slack webhook, Discord webhook, email (Resend), push (ntfy.sh self-hosted).
 **Architecture** : Publication Valkey pub/sub → subscriber dans `apps/server` → dispatch canaux.
 
 **Fichiers** :
 - `packages/notifications/src/slack.ts`
+- `packages/notifications/src/discord.ts`
 - `packages/notifications/src/email.ts`
 - `packages/notifications/src/push.ts`
 - `packages/notifications/src/dispatcher.ts`

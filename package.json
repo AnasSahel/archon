@@ -20,7 +20,8 @@
     "infra:reset": "docker compose -f infra/docker/docker-compose.dev.yml down -v && docker compose -f infra/docker/docker-compose.dev.yml up -d",
     "db:generate": "turbo run db:generate --filter=@archon/db",
     "db:migrate": "turbo run db:migrate --filter=@archon/db",
-    "db:studio": "turbo run db:studio --filter=@archon/db"
+    "db:studio": "turbo run db:studio --filter=@archon/db",
+    "db:seed": "pnpm --filter @archon/server db:seed"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
