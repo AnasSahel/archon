@@ -275,7 +275,7 @@ export default function TaskDetailPage() {
       <div className="mb-4">
         <AgentStream
           companyId={companyId}
-          agentId={task.agentId ?? undefined}
+          {...(task.agentId ? { agentId: task.agentId } : {})}
           taskId={taskId}
           onHeartbeatCompleted={loadTask}
         />
