@@ -59,17 +59,14 @@ tasksRouter.get("/companies/:companyId/tasks", async (c) => {
     return c.json({ error: "Not found" }, 404);
   }
 
-  let rows = await db
+  const conditions = [eq(tasks.companyId, companyId)];
+  if (status) conditions.push(eq(tasks.status, status as "open" | "in_progress" | "awaiting_human" | "escalated" | "done" | "cancelled"));
+  if (agentId) conditions.push(eq(tasks.agentId, agentId));
+
+  const rows = await db
     .select()
     .from(tasks)
-    .where(eq(tasks.companyId, companyId));
-
-  if (status) {
-    rows = rows.filter((t) => t.status === status);
-  }
-  if (agentId) {
-    rows = rows.filter((t) => t.agentId === agentId);
-  }
+    .where(and(...conditions));
 
   return c.json(rows);
 });

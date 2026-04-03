@@ -1,13 +1,32 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { loadSnapshot, saveSnapshot } from "@archon/context";
 import { sessionMiddleware } from "../middleware/session.js";
+import { getDb, agents, companyMembers } from "@archon/db";
 
 export const snapshotRouter = new Hono();
 
 // Require session auth for all snapshot routes
 snapshotRouter.use("/agent/snapshot*", sessionMiddleware);
+
+// Helper: verify user can access the given agentId (must share a company)
+async function canAccessAgent(userId: string, agentId: string): Promise<boolean> {
+  const db = getDb();
+  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+  if (!agent) return false;
+  const [membership] = await db
+    .select()
+    .from(companyMembers)
+    .where(eq(companyMembers.companyId, agent.companyId));
+  // Check that this user is a member of the agent's company
+  const rows = await db
+    .select()
+    .from(companyMembers)
+    .where(eq(companyMembers.companyId, agent.companyId));
+  return rows.some((r) => r.userId === userId);
+}
 
 // GET /agent/snapshot?agentId=&taskId=
 snapshotRouter.get(
@@ -20,7 +39,11 @@ snapshotRouter.get(
     })
   ),
   async (c) => {
+    const user = c.get("user");
     const { agentId, taskId } = c.req.valid("query");
+    if (!(await canAccessAgent(user.id, agentId))) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
     const snapshot = await loadSnapshot(agentId, taskId ?? null);
     return c.json(snapshot);
   }
@@ -78,7 +101,11 @@ snapshotRouter.post(
   "/agent/snapshot",
   zValidator("json", postSnapshotSchema),
   async (c) => {
+    const user = c.get("user");
     const { agentId, taskId, data } = c.req.valid("json");
+    if (!(await canAccessAgent(user.id, agentId))) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
     await saveSnapshot(agentId, taskId ?? null, data);
     return c.json({ success: true }, 201);
   }

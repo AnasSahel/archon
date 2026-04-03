@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
 import { getDb, agentBudgets, agents, companyMembers } from "@archon/db";
@@ -35,19 +35,14 @@ export async function trackCost(agentId: string, costUsd: number): Promise<void>
   const db = getDb();
   const month = currentMonth();
 
-  // Try to get existing budget record
-  const [existing] = await db
-    .select()
-    .from(agentBudgets)
-    .where(and(eq(agentBudgets.agentId, agentId), eq(agentBudgets.periodMonth, month)));
+  // Atomic increment using SQL expression to avoid race conditions on concurrent heartbeats
+  const updated = await db
+    .update(agentBudgets)
+    .set({ spentUsd: sql`CAST(CAST(${agentBudgets.spentUsd} AS NUMERIC) + ${costUsd} AS TEXT)` })
+    .where(and(eq(agentBudgets.agentId, agentId), eq(agentBudgets.periodMonth, month)))
+    .returning({ id: agentBudgets.id });
 
-  if (existing) {
-    const newSpent = parseFloat(existing.spentUsd as string) + costUsd;
-    await db
-      .update(agentBudgets)
-      .set({ spentUsd: newSpent.toFixed(4) })
-      .where(eq(agentBudgets.id, existing.id));
-  } else {
+  if (updated.length === 0) {
     // No budget record yet — create one with no limit (budget_usd = 0 means no explicit limit set)
     await db.insert(agentBudgets).values({
       id: randomUUID(),
@@ -87,11 +82,14 @@ budgetsRouter.get("/companies/:companyId/budgets", async (c) => {
     .from(agents)
     .where(eq(agents.companyId, companyId));
 
-  // Fetch budgets for the current month for all agents in this company
-  const budgetRows = await db
-    .select()
-    .from(agentBudgets)
-    .where(eq(agentBudgets.periodMonth, month));
+  // Fetch budgets for the current month, scoped to agents in this company
+  const agentIds = agentRows.map((a) => a.id);
+  const budgetRows = agentIds.length > 0
+    ? await db
+        .select()
+        .from(agentBudgets)
+        .where(and(eq(agentBudgets.periodMonth, month), inArray(agentBudgets.agentId, agentIds)))
+    : [];
 
   const budgetByAgentId = new Map(budgetRows.map((b) => [b.agentId, b]));
 
@@ -117,7 +115,7 @@ budgetsRouter.get("/companies/:companyId/budgets", async (c) => {
 });
 
 const setBudgetSchema = z.object({
-  budgetUsd: z.string().min(1),
+  budgetUsd: z.coerce.number().positive("Budget must be a positive number"),
   periodMonth: z.string().optional(),
 });
 
@@ -159,7 +157,7 @@ budgetsRouter.patch(
     if (existing) {
       await db
         .update(agentBudgets)
-        .set({ budgetUsd: body.budgetUsd, status: "active", pausedAt: null })
+        .set({ budgetUsd: body.budgetUsd.toFixed(4), status: "active", pausedAt: null })
         .where(eq(agentBudgets.id, existing.id));
 
       const [updated] = await db
@@ -173,7 +171,7 @@ budgetsRouter.patch(
         id,
         agentId,
         periodMonth: month,
-        budgetUsd: body.budgetUsd,
+        budgetUsd: body.budgetUsd.toFixed(4),
         spentUsd: "0",
         status: "active",
       });

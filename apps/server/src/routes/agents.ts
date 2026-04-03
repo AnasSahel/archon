@@ -149,9 +149,9 @@ agentsRouter.patch(
     if (body.workspacePath !== undefined) updates.workspacePath = body.workspacePath;
     if (body.status !== undefined) updates.status = body.status;
 
-    await db.update(agents).set(updates).where(eq(agents.id, agentId));
+    await db.update(agents).set(updates).where(and(eq(agents.id, agentId), eq(agents.companyId, companyId)));
 
-    const [updated] = await db.select().from(agents).where(eq(agents.id, agentId));
+    const [updated] = await db.select().from(agents).where(and(eq(agents.id, agentId), eq(agents.companyId, companyId)));
     return c.json(updated);
   }
 );

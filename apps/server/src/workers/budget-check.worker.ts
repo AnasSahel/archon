@@ -25,7 +25,8 @@ export function startBudgetCheckWorker(): Worker {
       const spent = parseFloat(budget.spentUsd as string);
       const limit = parseFloat(budget.budgetUsd as string);
 
-      if (spent >= limit && budget.status === "active") {
+      // limit === 0 means no explicit budget was set — never auto-pause
+      if (limit > 0 && spent >= limit && budget.status === "active") {
         await db
           .update(agentBudgets)
           .set({ status: "exceeded", pausedAt: new Date() })
