@@ -25,6 +25,9 @@ interface TaskDetail {
   title: string;
   description: string | null;
   status: string;
+  lockedAt: string | null;
+  lockedReason: string | null;
+  reviewRequiredBy: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -76,6 +79,11 @@ export default function TaskDetailPage() {
   const [commentError, setCommentError] = useState<string | null>(null);
 
   const [changingStatus, setChangingStatus] = useState(false);
+
+  const [hitlAction, setHitlAction] = useState<"approve" | "reject" | "comment" | null>(null);
+  const [hitlFeedback, setHitlFeedback] = useState("");
+  const [submittingHitl, setSubmittingHitl] = useState(false);
+  const [hitlError, setHitlError] = useState<string | null>(null);
 
   const loadTask = useCallback(() => {
     if (!companyId || !taskId) return Promise.resolve();
@@ -136,6 +144,29 @@ export default function TaskDetailPage() {
     }
   }
 
+  async function handleHitlSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!companyId || !taskId || !hitlAction) return;
+    setSubmittingHitl(true);
+    setHitlError(null);
+    try {
+      await apiFetch(`/api/companies/${companyId}/tasks/${taskId}/review`, {
+        method: "POST",
+        body: JSON.stringify({
+          action: hitlAction,
+          feedback: hitlFeedback.trim() || undefined,
+        }),
+      });
+      setHitlAction(null);
+      setHitlFeedback("");
+      await loadTask();
+    } catch (err) {
+      setHitlError(err instanceof Error ? err.message : "Failed to submit review");
+    } finally {
+      setSubmittingHitl(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -153,7 +184,9 @@ export default function TaskDetailPage() {
   }
 
   const canManage = company.userRole === "board" || company.userRole === "manager";
+  const isBoard = company.userRole === "board";
   const assignedAgent = agents.find((a) => a.id === task.agentId) ?? null;
+  const needsHitlReview = task.status === "awaiting_human" || task.status === "escalated";
 
   return (
     <div className="max-w-3xl">
@@ -236,6 +269,108 @@ export default function TaskDetailPage() {
           </div>
         )}
       </div>
+
+      {/* HITL Action Panel */}
+      {needsHitlReview && isBoard && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-700 p-6 mb-4">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="shrink-0 w-8 h-8 bg-amber-100 dark:bg-amber-800 rounded-full flex items-center justify-center">
+              <span className="text-amber-600 dark:text-amber-300 text-sm font-bold">!</span>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                {task.status === "escalated" ? "Escalated — Urgent Review Required" : "This task is awaiting your review"}
+              </h2>
+              {task.reviewRequiredBy && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                  Review deadline: {new Date(task.reviewRequiredBy).toLocaleString()}
+                </p>
+              )}
+              {task.lockedReason && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                  {task.lockedReason}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {hitlAction === null ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setHitlAction("approve")}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => setHitlAction("reject")}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-md transition-colors"
+              >
+                Reject
+              </button>
+              <button
+                onClick={() => setHitlAction("comment")}
+                className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+              >
+                Comment
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleHitlSubmit} className="space-y-3">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-100 capitalize">
+                {hitlAction === "approve"
+                  ? "Approve this task"
+                  : hitlAction === "reject"
+                  ? "Reject this task"
+                  : "Add a comment"}
+              </p>
+              {(hitlAction === "reject" || hitlAction === "comment") && (
+                <textarea
+                  value={hitlFeedback}
+                  onChange={(e) => setHitlFeedback(e.target.value)}
+                  rows={3}
+                  required={hitlAction === "comment"}
+                  placeholder={
+                    hitlAction === "reject"
+                      ? "Optional: explain why you're rejecting…"
+                      : "Your comment for the agent…"
+                  }
+                  className="w-full px-3 py-2 text-sm border border-amber-300 dark:border-amber-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                />
+              )}
+              {hitlError && (
+                <p className="text-sm text-red-600 dark:text-red-400">{hitlError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={submittingHitl}
+                  className={`px-4 py-2 text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50 ${
+                    hitlAction === "approve"
+                      ? "bg-green-600 hover:bg-green-700"
+                      : hitlAction === "reject"
+                      ? "bg-red-600 hover:bg-red-700"
+                      : "bg-indigo-600 hover:bg-indigo-700"
+                  }`}
+                >
+                  {submittingHitl ? "Submitting…" : `Confirm ${hitlAction}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHitlAction(null);
+                    setHitlFeedback("");
+                    setHitlError(null);
+                  }}
+                  className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       {/* Comment Thread */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">

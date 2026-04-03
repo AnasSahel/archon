@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import { getDb, tasks, taskComments, auditLog, companyMembers, agents } from "@archon/db";
 import { sessionMiddleware } from "../middleware/session.js";
 import { writeAuditEntry } from "../lib/audit.js";
+import { transitionHitl } from "../lib/hitl-service.js";
+import type { HitlEvent } from "@archon/hitl";
 
 export const tasksRouter = new Hono();
 
@@ -276,6 +278,78 @@ tasksRouter.post(
     });
 
     return c.json(comment, 201);
+  }
+);
+
+// POST /companies/:companyId/tasks/:taskId/review — HITL approve/reject/comment (board only)
+const reviewSchema = z.object({
+  action: z.enum(["approve", "reject", "comment"]),
+  feedback: z.string().optional(),
+});
+
+tasksRouter.post(
+  "/companies/:companyId/tasks/:taskId/review",
+  zValidator("json", reviewSchema),
+  async (c) => {
+    const user = c.get("user");
+    const { companyId, taskId } = c.req.param();
+    const body = c.req.valid("json");
+    const db = getDb();
+
+    const membership = await getMembership(companyId, user.id);
+    if (!membership) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    if (membership.role !== "board") {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, taskId), eq(tasks.companyId, companyId)));
+
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    if (task.status !== "awaiting_human" && task.status !== "escalated") {
+      return c.json({ error: "Task is not awaiting review" }, 400);
+    }
+
+    const context: import("@archon/hitl").HitlContext = {
+      taskId,
+      agentId: task.agentId ?? "",
+      reviewRequired: true,
+    };
+
+    let event: HitlEvent;
+    if (body.action === "approve") {
+      event = { type: "APPROVE" };
+    } else if (body.action === "reject") {
+      const rejectEvent: { type: "REJECT"; feedback?: string } = { type: "REJECT" };
+      if (body.feedback) rejectEvent.feedback = body.feedback;
+      event = rejectEvent;
+    } else {
+      if (!body.feedback) {
+        return c.json({ error: "feedback is required for comment" }, 400);
+      }
+      event = { type: "COMMENT", content: body.feedback };
+    }
+
+    const snapshot = await transitionHitl(taskId, context, event);
+
+    await writeAuditEntry({
+      companyId,
+      entityType: "task",
+      entityId: taskId,
+      action: `task.review.${body.action}`,
+      actorType: "human",
+      actorId: user.id,
+      diff: { action: body.action, feedback: body.feedback },
+    });
+
+    return c.json({ snapshot });
   }
 );
 
