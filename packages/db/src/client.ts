@@ -204,30 +204,43 @@ export async function initAppTables(): Promise<void> {
     );
   `);
 
-  // agent_memory table (pgvector — created separately, gracefully skips embedding column if vector unavailable)
+  // agent_memory table — stores snapshots (type='snapshot') and memory entries (type='memory')
+  // Created separately to handle pgvector embedding column gracefully
   try {
     await pg.exec(`
       CREATE TABLE IF NOT EXISTS agent_memory (
         id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'snapshot',
         content TEXT NOT NULL,
+        heartbeat_count INTEGER NOT NULL DEFAULT 0,
         embedding vector(1536),
         metadata JSONB DEFAULT '{}',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS agent_memory_agent_id_idx ON agent_memory(agent_id);
+      CREATE INDEX IF NOT EXISTS agent_memory_company_agent_idx ON agent_memory(company_id, agent_id);
+      CREATE INDEX IF NOT EXISTS agent_memory_type_idx ON agent_memory(agent_id, type);
     `);
   } catch {
-    // Fallback: create without embedding column if vector type not available
+    // Fallback: create without embedding column if pgvector not available
     await pg.exec(`
       CREATE TABLE IF NOT EXISTS agent_memory (
         id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'snapshot',
         content TEXT NOT NULL,
+        heartbeat_count INTEGER NOT NULL DEFAULT 0,
         metadata JSONB DEFAULT '{}',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS agent_memory_agent_id_idx ON agent_memory(agent_id);
+      CREATE INDEX IF NOT EXISTS agent_memory_company_agent_idx ON agent_memory(company_id, agent_id);
+      CREATE INDEX IF NOT EXISTS agent_memory_type_idx ON agent_memory(agent_id, type);
     `);
     console.warn("[db] agent_memory created without vector embedding column");
   }

@@ -17,6 +17,7 @@ import {
   estimateTokens,
   shouldSummarize,
   summarizeSnapshot,
+  toPromptString,
 } from "@archon/context";
 
 export interface HeartbeatJobData {
@@ -228,9 +229,8 @@ export function startHeartbeatWorker(): Worker {
             contextText += `\n\n[Human feedback from previous review]: ${humanFeedback}`;
           }
 
-          // Append snapshot context
-          const snapshotText = JSON.stringify(agentSnapshot, null, 2);
-          contextText += `\n\n[Agent context snapshot]:\n${snapshotText}`;
+          // Inject snapshot as compact prompt string (lower token usage than raw JSON)
+          contextText += `\n\n${toPromptString(agentSnapshot)}`;
 
           // HTTP / external adapter execution
           if (adapterType === "http") {
@@ -286,7 +286,7 @@ export function startHeartbeatWorker(): Worker {
             }
           }
 
-          await saveSnapshot(agentId, taskId ?? null, updatedSnapshot);
+          await saveSnapshot(agentId, taskId ?? null, updatedSnapshot, agent.companyId);
         }
 
         // Save result as task comment
