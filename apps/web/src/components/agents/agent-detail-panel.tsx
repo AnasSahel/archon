@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
 import type { AgentNode } from "./org-chart.js";
+import { AgentStream } from "@/components/stream/AgentStream";
 
 type Tab = "info" | "context" | "keys";
 
@@ -301,6 +302,13 @@ export function AgentDetailPanel({
                   {heartbeatToast.msg}
                 </p>
               )}
+              <div className="mt-3">
+                <AgentStream
+                  companyId={companyId}
+                  agentId={agent.id}
+                  onHeartbeatCompleted={onAgentUpdated}
+                />
+              </div>
             </div>
           )}
         </div>}

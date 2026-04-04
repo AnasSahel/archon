@@ -67,7 +67,15 @@ export async function runViaApi(params: {
       ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
       llmConfig: params.llmConfig,
       messages: params.messages,
-      ...(params.onChunk !== undefined ? { onChunk: params.onChunk } : {}),
+      onChunk: (chunk) => {
+        dispatch({
+          type: "heartbeat_token",
+          agentId: params.agentId,
+          ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
+          token: chunk,
+        });
+        params.onChunk?.(chunk);
+      },
     });
 
     dispatch({
