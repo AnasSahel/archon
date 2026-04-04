@@ -29,15 +29,14 @@ streamRouter.get(
       return c.json({ error: "Forbidden" }, 403);
     }
 
-    // Load agentIds for this company so we can filter events server-side
+    // Load agentIds for this company so we can filter events server-side.
+    // All NotificationEvent variants carry a required agentId, so we can
+    // scope every event to the company without any unsafe fallback paths.
     const companyAgents = await getDb().select({ id: agents.id }).from(agents).where(eq(agents.companyId, companyId));
     const companyAgentIds = new Set(companyAgents.map((a) => a.id));
 
-    // Helper: determine if an event belongs to this company
     function isCompanyEvent(event: NotificationEvent): boolean {
-      if ("agentId" in event) return companyAgentIds.has(event.agentId);
-      if ("taskId" in event) return true; // task events — pass through (tasks are always scoped to company via query)
-      return false;
+      return companyAgentIds.has(event.agentId);
     }
 
     return streamSSE(c, async (stream) => {

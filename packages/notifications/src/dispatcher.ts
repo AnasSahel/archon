@@ -6,7 +6,7 @@ export type NotificationEvent =
       status: string;
       costUsd: number;
     }
-  | { type: "task_updated"; taskId: string; status: string; agentId?: string }
+  | { type: "task_updated"; taskId: string; status: string; agentId: string }
   | { type: "hitl_gate_triggered"; taskId: string; agentId: string }
   | {
       type: "budget_alert";

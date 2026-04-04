@@ -12,6 +12,7 @@
     "test:run": "vitest run",
     "test": "vitest",
     "db:seed": "tsx src/seed.ts",
+    "db:seed-streaming": "tsx src/seed-streaming.ts",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {

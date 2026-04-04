@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { StatusBadge } from "@/components/tasks/status-badge";
+import { PaginationBar } from "@/components/ui/pagination";
 
 interface Task {
   id: string;
@@ -18,6 +19,14 @@ interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+interface PagedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
 }
 
 interface Agent {
@@ -38,11 +47,7 @@ interface CreateTaskForm {
   agentId: string;
 }
 
-const DEFAULT_FORM: CreateTaskForm = {
-  title: "",
-  description: "",
-  agentId: "",
-};
+const DEFAULT_FORM: CreateTaskForm = { title: "", description: "", agentId: "" };
 
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -54,11 +59,16 @@ const STATUS_OPTIONS = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+const PAGE_SIZE = 25;
+
 export default function TasksPage() {
   const { id: companyId } = useParams<{ id: string }>();
   const router = useRouter();
 
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [company, setCompany] = useState<CompanyInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,14 +82,18 @@ export default function TasksPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const loadTasks = useCallback(() => {
+  const loadTasks = useCallback((p = 1) => {
     if (!companyId) return Promise.resolve();
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
     if (statusFilter) params.set("status", statusFilter);
     if (agentFilter) params.set("agentId", agentFilter);
-    const qs = params.toString();
-    return apiFetch<Task[]>(`/api/companies/${companyId}/tasks${qs ? `?${qs}` : ""}`)
-      .then(setTasks)
+    return apiFetch<PagedResponse<Task>>(`/api/companies/${companyId}/tasks?${params}`)
+      .then((res) => {
+        setTasks(res.data);
+        setTotal(res.total);
+        setPage(res.page);
+        setPageCount(res.pageCount);
+      })
       .catch((err: Error) => setError(err.message));
   }, [companyId, statusFilter, agentFilter]);
 
@@ -88,23 +102,24 @@ export default function TasksPage() {
     setLoading(true);
     Promise.all([
       apiFetch<CompanyInfo>(`/api/companies/${companyId}`),
-      apiFetch<Agent[]>(`/api/companies/${companyId}/agents`),
-      apiFetch<Task[]>(`/api/companies/${companyId}/tasks`),
+      apiFetch<PagedResponse<Agent>>(`/api/companies/${companyId}/agents?pageSize=100`),
+      apiFetch<PagedResponse<Task>>(`/api/companies/${companyId}/tasks?pageSize=${PAGE_SIZE}`),
     ])
-      .then(([comp, agentList, taskList]) => {
+      .then(([comp, agentRes, taskRes]) => {
         setCompany(comp);
-        setAgents(agentList);
-        setTasks(taskList);
+        setAgents(agentRes.data);
+        setTasks(taskRes.data);
+        setTotal(taskRes.total);
+        setPage(taskRes.page);
+        setPageCount(taskRes.pageCount);
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, [companyId]);
 
   useEffect(() => {
-    if (!loading) {
-      loadTasks();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!loading) loadTasks(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, agentFilter]);
 
   async function handleCreateTask(e: React.FormEvent) {
@@ -123,7 +138,7 @@ export default function TasksPage() {
       });
       setForm(DEFAULT_FORM);
       setShowCreateForm(false);
-      await loadTasks();
+      await loadTasks(1);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to create task");
     } finally {
@@ -171,7 +186,7 @@ export default function TasksPage() {
           </Link>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Tasks</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {tasks.length} task{tasks.length !== 1 ? "s" : ""}
+            {total} task{total !== 1 ? "s" : ""}
           </p>
         </div>
         {canManage && (
@@ -191,9 +206,7 @@ export default function TasksPage() {
             ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700"
             : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700"
         }`}>
-          <span className="text-lg">
-            {escalatedCount > 0 ? "🔴" : "🟡"}
-          </span>
+          <span className="text-lg">{escalatedCount > 0 ? "🔴" : "🟡"}</span>
           <div className="text-sm">
             {escalatedCount > 0 && (
               <span className="font-semibold text-red-700 dark:text-red-300 mr-3">
@@ -279,11 +292,7 @@ export default function TasksPage() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setShowCreateForm(false);
-                  setForm(DEFAULT_FORM);
-                  setFormError(null);
-                }}
+                onClick={() => { setShowCreateForm(false); setForm(DEFAULT_FORM); setFormError(null); }}
                 className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
               >
                 Cancel
@@ -301,9 +310,7 @@ export default function TasksPage() {
           className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
 
@@ -314,9 +321,7 @@ export default function TasksPage() {
         >
           <option value="">All agents</option>
           {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
+            <option key={a.id} value={a.id}>{a.name}</option>
           ))}
         </select>
       </div>
@@ -336,29 +341,40 @@ export default function TasksPage() {
             )}
           </div>
         ) : (
-          <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-            {tasks.map((task) => (
-              <li key={task.id}>
-                <button
-                  onClick={() => router.push(`/companies/${companyId}/tasks/${task.id}`)}
-                  className="w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                        {task.title}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        Agent: {getAgentName(task.agentId)} &middot;{" "}
-                        {new Date(task.createdAt).toLocaleDateString()}
-                      </p>
+          <>
+            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+              {tasks.map((task) => (
+                <li key={task.id}>
+                  <button
+                    onClick={() => router.push(`/companies/${companyId}/tasks/${task.id}`)}
+                    className="w-full text-left px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {task.title}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Agent: {getAgentName(task.agentId)} &middot;{" "}
+                          {new Date(task.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <StatusBadge status={task.status} />
                     </div>
-                    <StatusBadge status={task.status} />
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="px-6 border-t border-gray-200 dark:border-gray-700">
+              <PaginationBar
+                page={page}
+                pageCount={pageCount}
+                total={total}
+                pageSize={PAGE_SIZE}
+                onPageChange={(p) => loadTasks(p)}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>

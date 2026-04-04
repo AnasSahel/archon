@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
-import { getDb, agents, agentApiKeys, companyMembers } from "@archon/db";
+import { getDb, agents, agentApiKeys, companyMembers, heartbeats } from "@archon/db";
+import { desc } from "drizzle-orm";
 import { sessionMiddleware } from "../middleware/session.js";
 
 export const agentsRouter = new Hono();
@@ -66,6 +67,10 @@ const updateAgentSchema = z.object({
 agentsRouter.get("/companies/:companyId/agents", async (c) => {
   const user = c.get("user");
   const { companyId } = c.req.param();
+  const { page: pageStr, pageSize: pageSizeStr } = c.req.query();
+  const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeStr ?? "50", 10) || 50));
+  const offset = (page - 1) * pageSize;
   const db = getDb();
 
   const membership = await getMembership(companyId, user.id);
@@ -73,12 +78,17 @@ agentsRouter.get("/companies/:companyId/agents", async (c) => {
     return c.json({ error: "Not found" }, 404);
   }
 
+  const where = eq(agents.companyId, companyId);
+  const countResult = await db.select({ total: count() }).from(agents).where(where);
+  const total = countResult[0]?.total ?? 0;
   const rows = await db
     .select()
     .from(agents)
-    .where(eq(agents.companyId, companyId));
+    .where(where)
+    .limit(pageSize)
+    .offset(offset);
 
-  return c.json(rows);
+  return c.json({ data: rows, total, page, pageSize, pageCount: Math.ceil(total / pageSize) });
 });
 
 // POST /companies/:companyId/agents — create agent (board/manager only)
@@ -292,4 +302,37 @@ agentsRouter.delete("/companies/:companyId/api-keys/:keyId", async (c) => {
     .where(eq(agentApiKeys.id, keyId));
 
   return c.json({ success: true });
+});
+
+// GET /companies/:companyId/agents/:agentId/heartbeats — list heartbeats for an agent
+agentsRouter.get("/companies/:companyId/agents/:agentId/heartbeats", async (c) => {
+  const user = c.get("user");
+  const { companyId, agentId } = c.req.param();
+  const { page: pageStr, pageSize: pageSizeStr } = c.req.query();
+  const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeStr ?? "25", 10) || 25));
+  const offset = (page - 1) * pageSize;
+  const db = getDb();
+
+  const membership = await getMembership(companyId, user.id);
+  if (!membership) return c.json({ error: "Not found" }, 404);
+
+  const [agent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.companyId, companyId)));
+  if (!agent) return c.json({ error: "Agent not found" }, 404);
+
+  const where = eq(heartbeats.agentId, agentId);
+  const hbCount = await db.select({ total: count() }).from(heartbeats).where(where);
+  const total = hbCount[0]?.total ?? 0;
+  const rows = await db
+    .select()
+    .from(heartbeats)
+    .where(where)
+    .orderBy(desc(heartbeats.startedAt))
+    .limit(pageSize)
+    .offset(offset);
+
+  return c.json({ data: rows, total, page, pageSize, pageCount: Math.ceil(total / pageSize) });
 });

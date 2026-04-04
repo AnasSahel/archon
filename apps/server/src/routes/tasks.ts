@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { getDb, tasks, taskComments, auditLog, companyMembers } from "@archon/db";
 import { sessionMiddleware } from "../middleware/session.js";
@@ -52,7 +52,10 @@ const createCommentSchema = z.object({
 tasksRouter.get("/companies/:companyId/tasks", async (c) => {
   const user = c.get("user");
   const { companyId } = c.req.param();
-  const { status, agentId } = c.req.query();
+  const { status, agentId, page: pageStr, pageSize: pageSizeStr } = c.req.query();
+  const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeStr ?? "25", 10) || 25));
+  const offset = (page - 1) * pageSize;
   const db = getDb();
 
   const membership = await getMembership(companyId, user.id);
@@ -64,12 +67,17 @@ tasksRouter.get("/companies/:companyId/tasks", async (c) => {
   if (status) conditions.push(eq(tasks.status, status as "open" | "in_progress" | "awaiting_human" | "escalated" | "done" | "cancelled"));
   if (agentId) conditions.push(eq(tasks.agentId, agentId));
 
+  const where = and(...conditions);
+  const countResult = await db.select({ total: count() }).from(tasks).where(where);
+  const total = countResult[0]?.total ?? 0;
   const rows = await db
     .select()
     .from(tasks)
-    .where(and(...conditions));
+    .where(where)
+    .limit(pageSize)
+    .offset(offset);
 
-  return c.json(rows);
+  return c.json({ data: rows, total, page, pageSize, pageCount: Math.ceil(total / pageSize) });
 });
 
 // POST /companies/:companyId/tasks — create task (board/manager only)

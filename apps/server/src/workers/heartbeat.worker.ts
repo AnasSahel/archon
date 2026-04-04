@@ -11,6 +11,14 @@ import { trackCost } from "../routes/budgets.js";
 import { transitionHitl, getHitlSnapshot } from "../lib/hitl-service.js";
 import { scheduleHitlEscalation } from "./hitl-escalation.worker.js";
 import type { AdapterType } from "@archon/tool-policy";
+import {
+  loadSnapshot,
+  saveSnapshot,
+  estimateTokens,
+  shouldSummarize,
+  summarizeSnapshot,
+  toPromptString,
+} from "@archon/context";
 
 export interface HeartbeatJobData {
   agentId: string;
@@ -210,6 +218,9 @@ export function startHeartbeatWorker(): Worker {
           inputTokens = 0;
           outputTokens = 0;
         } else {
+          // Load agent snapshot and inject into context
+          const agentSnapshot = await loadSnapshot(agentId, taskId ?? null);
+
           // Build task context, injecting any human feedback from HITL state
           let contextText = task?.description ?? task?.title ?? "(no task context)";
           const hitlSnapshot = task ? await getHitlSnapshot(task.id) : null;
@@ -217,6 +228,9 @@ export function startHeartbeatWorker(): Worker {
           if (humanFeedback) {
             contextText += `\n\n[Human feedback from previous review]: ${humanFeedback}`;
           }
+
+          // Inject snapshot as compact prompt string (lower token usage than raw JSON)
+          contextText += `\n\n${toPromptString(agentSnapshot)}`;
 
           // HTTP / external adapter execution
           if (adapterType === "http") {
@@ -247,6 +261,32 @@ export function startHeartbeatWorker(): Worker {
             // LLM-based adapters in non-docker mode — not yet supported
             throw new Error(`Adapter type '${adapterType}' requires Docker mode (set DOCKER_HOST)`);
           }
+
+          // Update and save snapshot after HTTP execution
+          const newHeartbeatCount = agentSnapshot.heartbeat_count + 1;
+          let updatedSnapshot = {
+            ...agentSnapshot,
+            heartbeat_count: newHeartbeatCount,
+          };
+
+          // Auto-summarize every 10 heartbeats
+          if (shouldSummarize(newHeartbeatCount)) {
+            updatedSnapshot = await summarizeSnapshot(updatedSnapshot);
+            // Post "Context compressed" comment
+            if (task) {
+              await db.insert(taskComments).values({
+                id: randomUUID(),
+                taskId: task.id,
+                authorType: "agent",
+                authorId: agentId,
+                content: `**Context compressed** — heartbeat #${newHeartbeatCount}\n- Tokens after compression: ~${estimateTokens(updatedSnapshot)}`,
+                commentType: "snapshot",
+                metadata: { heartbeatId, type: "context_compressed" },
+              });
+            }
+          }
+
+          await saveSnapshot(agentId, taskId ?? null, updatedSnapshot, agent.companyId);
         }
 
         // Save result as task comment
@@ -377,11 +417,20 @@ export function startHeartbeatWorker(): Worker {
         throw err;
       }
     },
-    { connection: getRedis() }
+    {
+      connection: getRedis(),
+      concurrency: parseInt(process.env.HEARTBEAT_CONCURRENCY ?? "5", 10),
+    }
   );
 
   worker.on("failed", (job, err) => {
-    console.error(`[heartbeat] Job ${job?.id} failed:`, err);
+    const attempt = job?.attemptsMade ?? 0;
+    const maxAttempts = job?.opts?.attempts ?? 1;
+    if (attempt < maxAttempts) {
+      console.warn(`[heartbeat] Job ${job?.id} failed (attempt ${attempt}/${maxAttempts}), will retry:`, err.message);
+    } else {
+      console.error(`[heartbeat] Job ${job?.id} permanently failed after ${attempt} attempts:`, err);
+    }
   });
 
   return worker;
