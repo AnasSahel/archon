@@ -24,10 +24,11 @@
     "db:seed": "pnpm --filter @archon/server db:seed",
     "db:seed-streaming": "pnpm --filter @archon/server db:seed-streaming",
     "docker:build-agents": "bash scripts/build-agents.sh",
-    "echo:start": "node --import tsx/esm infra/agent-echo/index.ts"
+    "echo:start": "tsx infra/agent-echo/index.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.3",
     "@types/node": "^22.10.2"
   }

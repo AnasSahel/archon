@@ -1,7 +1,3 @@
-import { streamAgentResponse } from "@archon/ai";
-import { dispatch } from "@archon/notifications";
-import type { AgentLLMConfig } from "@archon/ai";
-
 export interface RunResult {
   result: string;
   usage: { input_tokens: number; output_tokens: number };
@@ -43,55 +39,4 @@ export async function runViaHttpAdapter(params: {
       output_tokens: data.usage?.output_tokens ?? 0,
     },
   };
-}
-
-/**
- * Run agent via LLM API (Anthropic / OpenAI stream).
- */
-export async function runViaApi(params: {
-  agentId: string;
-  taskId?: string;
-  llmConfig: AgentLLMConfig;
-  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-  onChunk?: (chunk: string) => void;
-}): Promise<string> {
-  dispatch({
-    type: "heartbeat_started",
-    agentId: params.agentId,
-    ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
-  });
-
-  try {
-    const result = await streamAgentResponse({
-      agentId: params.agentId,
-      ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
-      llmConfig: params.llmConfig,
-      messages: params.messages,
-      onChunk: (chunk) => {
-        dispatch({
-          type: "heartbeat_token",
-          agentId: params.agentId,
-          ...(params.taskId !== undefined ? { taskId: params.taskId } : {}),
-          token: chunk,
-        });
-        params.onChunk?.(chunk);
-      },
-    });
-
-    dispatch({
-      type: "heartbeat_completed",
-      agentId: params.agentId,
-      status: "completed",
-      costUsd: 0,
-    });
-    return result;
-  } catch (err) {
-    dispatch({
-      type: "agent_log",
-      agentId: params.agentId,
-      level: "error",
-      message: String(err),
-    });
-    throw err;
-  }
 }
