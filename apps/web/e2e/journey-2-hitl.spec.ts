@@ -70,8 +70,8 @@ test.describe("Journey 2 — HITL flow: awaiting_human → approve → done", ()
 
     // -- Reload and verify awaiting_human badge is shown --
     await page.reload();
-    // Should show the awaiting_human status
-    await expect(page.getByText(/awaiting.human/i).first()).toBeVisible({ timeout: 5_000 });
+    // Should show the awaiting_human status badge (span from StatusBadge component)
+    await expect(page.locator('span', { hasText: /awaiting human/i })).toBeVisible({ timeout: 5_000 });
 
     // -- Approve the task --
     const approveBtn = page.getByRole("button", { name: /approve/i });
