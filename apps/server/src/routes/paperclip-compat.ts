@@ -287,7 +287,6 @@ paperclipCompatRouter.patch("/issues/:issueId", async (c) => {
     status?: string;
     comment?: string;
     title?: string;
-    description?: string;
   } = {};
   try {
     body = await c.req.json() as typeof body;
@@ -310,7 +309,6 @@ paperclipCompatRouter.patch("/issues/:issueId", async (c) => {
     if (archonStatus === "done") updates.completedAt = new Date();
   }
   if (body.title !== undefined) updates.title = body.title;
-  if (body.description !== undefined) updates.description = body.description;
 
   await db.update(tasks).set(updates).where(eq(tasks.id, issueId));
 

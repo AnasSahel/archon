@@ -235,18 +235,22 @@ tasksRouter.patch(
     const agentChanged = newAgentId !== undefined && newAgentId !== null && newAgentId !== existing.agentId;
     const taskIsTerminal = finalStatus === "done" || finalStatus === "cancelled";
     if (agentChanged && !taskIsTerminal) {
-      const [assignedAgent] = await db
-        .select()
-        .from(agents)
-        .where(eq(agents.id, newAgentId!));
-      if (assignedAgent && assignedAgent.status !== "paused" && assignedAgent.status !== "terminated") {
-        await enqueueHeartbeat({
-          agentId: newAgentId!,
-          companyId,
-          taskId,
-          adapterType: assignedAgent.adapterType,
-          workspacePath: assignedAgent.workspacePath,
-        });
+      // Dedup: skip enqueue if task is already in_progress (heartbeat already running)
+      const currentStatus = updated?.status ?? finalStatus;
+      if (currentStatus !== "in_progress") {
+        const [assignedAgent] = await db
+          .select()
+          .from(agents)
+          .where(eq(agents.id, newAgentId!));
+        if (assignedAgent && assignedAgent.status !== "paused" && assignedAgent.status !== "terminated") {
+          await enqueueHeartbeat({
+            agentId: newAgentId!,
+            companyId,
+            taskId,
+            adapterType: assignedAgent.adapterType,
+            workspacePath: assignedAgent.workspacePath,
+          });
+        }
       }
     }
 
