@@ -216,25 +216,7 @@ export function startHeartbeatWorker(): Worker {
           inputTokens = 0;
           outputTokens = 0;
         } else if (mode === "local") {
-          // For claude_code in local mode, launch the CLI as a subprocess with the task
-          // context injected directly into the prompt. The CLI uses the user's local auth
-          // (Max plan / OAuth) — no Anthropic API key required. We intentionally do NOT
-          // pass PAPERCLIP_* env vars so the agent stays in simple prompt-response mode
-          // instead of trying to call back to Archon's API.
-          let command: string[];
-          const isSimpleCliMode = adapterType === "claude_code" && task;
-          if (isSimpleCliMode) {
-            const taskContext = task.description ?? task.title ?? "(no task description)";
-            command = [
-              "claude",
-              "--dangerously-skip-permissions",
-              "--print",
-              "-p",
-              `Complete the following task and reply with only the result:\n\n${taskContext}`,
-            ];
-          } else {
-            command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
-          }
+          const command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
 
           const workspacePath = agent.workspacePath ?? job.data.workspacePath ?? null;
           if (workspacePath) {
@@ -251,14 +233,11 @@ export function startHeartbeatWorker(): Worker {
             }
           }
 
-          // In simple CLI mode, keep the env clean — no PAPERCLIP_* vars, no API keys.
-          // The agent just processes the prompt and returns output.
-          // For non-simple modes, inject Paperclip env so the agent can call back.
           let localEnv: Record<string, string> = {};
           let runKeyId: string | null = null;
           let runApiKey: string | null = null;
 
-          if (!isSimpleCliMode) {
+          {
             const { raw, hash, prefix } = generateRunApiKey();
             runApiKey = raw;
             runKeyId = randomUUID();
