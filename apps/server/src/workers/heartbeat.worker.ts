@@ -221,7 +221,22 @@ export function startHeartbeatWorker(): Worker {
           inputTokens = 0;
           outputTokens = 0;
         } else if (mode === "local") {
-          const command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
+          // For claude_code in local mode, inject task context directly into the prompt so
+          // the agent does not need to call any external API (Archon exposes no Paperclip-
+          // compatible control-plane endpoints in local mode).
+          let command: string[];
+          if (adapterType === "claude_code" && task) {
+            const taskContext = task.description ?? task.title ?? "(no task description)";
+            command = [
+              "claude",
+              "--dangerously-skip-permissions",
+              "--print",
+              "-p",
+              `Complete the following task and reply with only the result:\n\n${taskContext}`,
+            ];
+          } else {
+            command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
+          }
 
           // Generate short-lived API key for this local run
           const { raw: runApiKey, hash, prefix } = generateRunApiKey();
