@@ -1,6 +1,11 @@
 /**
- * Journey 2: HITL flow
- * task → status=awaiting_human (simulated via API) → UI shows review banner → approve → done
+ * Journey 2: HITL flow — UI review gate
+ *
+ * Tests the UI path: task in awaiting_human → review banner visible → approve → done.
+ * The awaiting_human state is seeded via direct PATCH (intentional shortcut for UI testing).
+ * The full state-machine transition (heartbeat → transitionHitl → awaiting_human) is covered
+ * by the hitlMachine unit tests in packages/hitl/src/machine.test.ts and the fix in
+ * apps/server/src/lib/hitl-service.ts (TRU-138).
  */
 import { test, expect, request as apiRequest } from "@playwright/test";
 

@@ -31,6 +31,11 @@ export async function transitionHitl(
   });
 
   actor.start();
+  // Fresh tasks start in IDLE which only handles START, not RESULT_READY.
+  // Bootstrap the machine to RUNNING before sending the real event.
+  if (persistedXstateSnapshot === null) {
+    actor.send({ type: "START" });
+  }
   actor.send(event);
 
   const xstateSnapshot = actor.getPersistedSnapshot();
