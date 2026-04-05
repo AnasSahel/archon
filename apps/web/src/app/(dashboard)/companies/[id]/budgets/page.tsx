@@ -224,10 +224,11 @@ export default function BudgetsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="budget-amount" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Budget (USD) <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="budget-amount"
                   type="number"
                   step="0.01"
                   min="0"
