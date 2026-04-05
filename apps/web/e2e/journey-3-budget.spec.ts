@@ -27,7 +27,7 @@ test.describe("Journey 3 — Budget limit: agent auto-paused", () => {
     await page.goto("/companies/new");
     await page.getByLabel(/company name/i).fill(`Budget Corp ${ts}`);
     await page.getByRole("button", { name: /create/i }).click();
-    await page.waitForURL(/\/companies\/[^/]+$/, { timeout: 10_000 });
+    await page.waitForURL(/\/companies\/[a-f0-9-]{36}$/, { timeout: 10_000 });
     const companyId = page.url().split("/companies/")[1]?.split("/")[0];
     expect(companyId).toBeTruthy();
 

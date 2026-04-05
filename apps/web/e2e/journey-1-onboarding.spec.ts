@@ -36,7 +36,7 @@ test.describe("Journey 1 — Onboarding to first heartbeat result", () => {
     await page.getByRole("button", { name: /create/i }).click();
 
     // Should redirect to the new company page
-    await page.waitForURL(/\/companies\/[^/]+$/, { timeout: 10_000 });
+    await page.waitForURL(/\/companies\/[a-f0-9-]{36}$/, { timeout: 10_000 });
     const companyUrl = page.url();
     const companyId = companyUrl.split("/companies/")[1]?.split("/")[0];
     expect(companyId).toBeTruthy();
