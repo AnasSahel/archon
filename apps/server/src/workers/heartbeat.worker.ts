@@ -259,7 +259,7 @@ export function startHeartbeatWorker(): Worker {
           }
 
           const localEnv: Record<string, string> = {
-            PAPERCLIP_API_URL: process.env.PAPERCLIP_API_URL ?? "http://localhost:3010",
+            PAPERCLIP_API_URL: `http://localhost:${process.env.PORT ?? "3010"}`,
             PAPERCLIP_COMPANY_ID: agent.companyId,
             PAPERCLIP_AGENT_ID: agentId,
             PAPERCLIP_RUN_ID: heartbeatId,
