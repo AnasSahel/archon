@@ -174,17 +174,12 @@ export function startHeartbeatWorker(): Worker {
             }
           }
 
-          // Build extra env vars (LLM API keys from server environment)
+          // Build extra env vars — no LLM API keys forwarded; the CLI inside the
+          // container uses its own auth (Max plan / OAuth).
           const containerEnv: Record<string, string> = {
             PAPERCLIP_COMPANY_ID: agent.companyId,
           };
           if (taskId) containerEnv.PAPERCLIP_TASK_ID = taskId;
-          if (process.env.ANTHROPIC_API_KEY) {
-            containerEnv.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-          }
-          if (process.env.OPENAI_API_KEY) {
-            containerEnv.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-          }
 
           // Run the container with streaming output
           const logLines: string[] = [];
@@ -221,11 +216,14 @@ export function startHeartbeatWorker(): Worker {
           inputTokens = 0;
           outputTokens = 0;
         } else if (mode === "local") {
-          // For claude_code in local mode, inject task context directly into the prompt so
-          // the agent does not need to call any external API (Archon exposes no Paperclip-
-          // compatible control-plane endpoints in local mode).
+          // For claude_code in local mode, launch the CLI as a subprocess with the task
+          // context injected directly into the prompt. The CLI uses the user's local auth
+          // (Max plan / OAuth) — no Anthropic API key required. We intentionally do NOT
+          // pass PAPERCLIP_* env vars so the agent stays in simple prompt-response mode
+          // instead of trying to call back to Archon's API.
           let command: string[];
-          if (adapterType === "claude_code" && task) {
+          const isSimpleCliMode = adapterType === "claude_code" && task;
+          if (isSimpleCliMode) {
             const taskContext = task.description ?? task.title ?? "(no task description)";
             command = [
               "claude",
@@ -237,26 +235,6 @@ export function startHeartbeatWorker(): Worker {
           } else {
             command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
           }
-
-          // Generate short-lived API key for this local run
-          const { raw: runApiKey, hash, prefix } = generateRunApiKey();
-          const runKeyId = randomUUID();
-          const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
-          const containerTimeoutMs =
-            typeof adapterCfg["containerTimeoutMs"] === "number"
-              ? adapterCfg["containerTimeoutMs"]
-              : parseInt(process.env.AGENT_CONTAINER_TIMEOUT_MS ?? "600000", 10);
-
-          const keyExpiresAt = new Date(Date.now() + containerTimeoutMs + 60_000);
-          await db.insert(agentApiKeys).values({
-            id: runKeyId,
-            agentId,
-            companyId: agent.companyId,
-            keyHash: hash,
-            keyPrefix: prefix,
-            scopes: ["heartbeat"],
-            expiresAt: keyExpiresAt,
-          });
 
           const workspacePath = agent.workspacePath ?? job.data.workspacePath ?? null;
           if (workspacePath) {
@@ -273,13 +251,42 @@ export function startHeartbeatWorker(): Worker {
             }
           }
 
-          const localEnv: Record<string, string> = {
-            PAPERCLIP_API_URL: `http://localhost:${process.env.PORT ?? "3010"}`,
-            PAPERCLIP_COMPANY_ID: agent.companyId,
-            PAPERCLIP_AGENT_ID: agentId,
-            PAPERCLIP_RUN_ID: heartbeatId,
-          };
-          if (taskId) localEnv.PAPERCLIP_TASK_ID = taskId;
+          // In simple CLI mode, keep the env clean — no PAPERCLIP_* vars, no API keys.
+          // The agent just processes the prompt and returns output.
+          // For non-simple modes, inject Paperclip env so the agent can call back.
+          let localEnv: Record<string, string> = {};
+          let runKeyId: string | null = null;
+          let runApiKey: string | null = null;
+
+          if (!isSimpleCliMode) {
+            const { raw, hash, prefix } = generateRunApiKey();
+            runApiKey = raw;
+            runKeyId = randomUUID();
+            const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+            const containerTimeoutMs =
+              typeof adapterCfg["containerTimeoutMs"] === "number"
+                ? adapterCfg["containerTimeoutMs"]
+                : parseInt(process.env.AGENT_CONTAINER_TIMEOUT_MS ?? "600000", 10);
+
+            const keyExpiresAt = new Date(Date.now() + containerTimeoutMs + 60_000);
+            await db.insert(agentApiKeys).values({
+              id: runKeyId,
+              agentId,
+              companyId: agent.companyId,
+              keyHash: hash,
+              keyPrefix: prefix,
+              scopes: ["heartbeat"],
+              expiresAt: keyExpiresAt,
+            });
+
+            localEnv = {
+              PAPERCLIP_API_URL: `http://localhost:${process.env.PORT ?? "3010"}`,
+              PAPERCLIP_COMPANY_ID: agent.companyId,
+              PAPERCLIP_AGENT_ID: agentId,
+              PAPERCLIP_RUN_ID: heartbeatId,
+            };
+            if (taskId) localEnv.PAPERCLIP_TASK_ID = taskId;
+          }
 
           const logLines: string[] = [];
           try {
@@ -288,7 +295,7 @@ export function startHeartbeatWorker(): Worker {
               ...(taskId !== undefined ? { taskId } : {}),
               command,
               env: localEnv,
-              apiKey: runApiKey,
+              apiKey: runApiKey ?? "",
               ...(workspacePath ? { workspacePath } : {}),
               onLog: (log) => {
                 logLines.push(log);
@@ -301,10 +308,12 @@ export function startHeartbeatWorker(): Worker {
               },
             });
           } finally {
-            await db
-              .update(agentApiKeys)
-              .set({ revokedAt: new Date() })
-              .where(eq(agentApiKeys.id, runKeyId));
+            if (runKeyId) {
+              await db
+                .update(agentApiKeys)
+                .set({ revokedAt: new Date() })
+                .where(eq(agentApiKeys.id, runKeyId));
+            }
           }
 
           resultText = logLines.join("");
