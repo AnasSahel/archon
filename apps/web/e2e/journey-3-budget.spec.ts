@@ -60,7 +60,7 @@ test.describe("Journey 3 — Budget limit: agent auto-paused", () => {
       await expect(page.getByText(/0\.01|budget/i)).toBeVisible({ timeout: 10_000 });
     } else {
       // Budget UI not rendered — just verify the page loads without error
-      await expect(page.getByText(/budget/i)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText(/budget/i).first()).toBeVisible({ timeout: 5_000 });
     }
 
     // -- Verify budget table shows something --
