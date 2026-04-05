@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { subscribe, type NotificationEvent } from "@archon/notifications";
 import { sessionMiddleware } from "../middleware/session.js";
-import { getDb, companyMembers, agents } from "@archon/db";
-import { and, eq } from "drizzle-orm";
+import { getDb, companyMembers, agents, heartbeats } from "@archon/db";
+import { and, eq, inArray, desc } from "drizzle-orm";
 
 export const streamRouter = new Hono();
 
@@ -49,6 +49,49 @@ streamRouter.get(
           /* ignore write errors */
         });
       });
+
+      // Catch-up: replay recent heartbeat state so clients that connect after a
+      // heartbeat started (race condition) immediately see the current state.
+      if (companyAgentIds.size > 0) {
+        const agentIdList = Array.from(companyAgentIds);
+        const recentHeartbeats = await getDb()
+          .select()
+          .from(heartbeats)
+          .where(inArray(heartbeats.agentId, agentIdList))
+          .orderBy(desc(heartbeats.startedAt))
+          .limit(20);
+
+        // Deduplicate: one catch-up event per agent (most recent heartbeat wins)
+        const seen = new Set<string>();
+        for (const hb of recentHeartbeats) {
+          if (seen.has(hb.agentId)) continue;
+          seen.add(hb.agentId);
+
+          if (hb.status === "running") {
+            // Heartbeat still in progress — tell the UI the agent is active
+            await stream.writeSSE({
+              event: "heartbeat_started",
+              data: JSON.stringify({
+                type: "heartbeat_started",
+                agentId: hb.agentId,
+                ...(hb.taskId ? { taskId: hb.taskId } : {}),
+              }),
+            }).catch(() => {});
+          } else if (hb.status === "completed" || hb.status === "failed") {
+            // Heartbeat already finished — send completed event so UI reflects final state
+            const costUsd = hb.costUsd ? parseFloat(String(hb.costUsd)) : 0;
+            await stream.writeSSE({
+              event: "heartbeat_completed",
+              data: JSON.stringify({
+                type: "heartbeat_completed",
+                agentId: hb.agentId,
+                status: hb.status,
+                costUsd,
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
 
       // Keep alive ping every 15s
       const interval = setInterval(() => {
