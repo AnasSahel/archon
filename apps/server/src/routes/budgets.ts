@@ -38,7 +38,7 @@ export async function trackCost(agentId: string, costUsd: number): Promise<void>
   // Atomic increment using SQL expression to avoid race conditions on concurrent heartbeats
   const updated = await db
     .update(agentBudgets)
-    .set({ spentUsd: sql`CAST(CAST(${agentBudgets.spentUsd} AS NUMERIC) + ${costUsd} AS TEXT)` })
+    .set({ spentUsd: sql`CAST(CAST(${agentBudgets.spentUsd} AS NUMERIC) + ${costUsd} AS NUMERIC)` })
     .where(and(eq(agentBudgets.agentId, agentId), eq(agentBudgets.periodMonth, month)))
     .returning({ id: agentBudgets.id });
 
