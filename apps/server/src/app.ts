@@ -10,6 +10,7 @@ import { snapshotRouter } from "./routes/snapshot.js";
 import { toolsRouter } from "./routes/tools.js";
 import { streamRouter } from "./routes/stream.js";
 import { heartbeatRouter } from "./routes/heartbeat.js";
+import { paperclipCompatRouter } from "./routes/paperclip-compat.js";
 import { auth } from "./lib/auth.js";
 import { rateLimitMiddleware } from "./middleware/rate-limit.js";
 
@@ -48,6 +49,7 @@ app.route("/api", snapshotRouter);
 app.route("/api", toolsRouter);
 app.route("/api", streamRouter);
 app.route("/api", heartbeatRouter);
+app.route("/api", paperclipCompatRouter);
 
 // 404 fallback
 app.notFound((c) => c.json({ error: "Not found" }, 404));
