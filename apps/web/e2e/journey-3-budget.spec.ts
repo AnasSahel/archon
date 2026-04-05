@@ -41,7 +41,7 @@ test.describe("Journey 3 — Budget limit: agent auto-paused", () => {
 
     // -- Navigate to budgets page --
     await page.goto(`/companies/${companyId}/budgets`);
-    await expect(page.getByText(/budget/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole("heading", { name: /budget/i })).toBeVisible({ timeout: 5_000 });
 
     // -- Set a very low budget ($0.01) --
     const setBudgetBtn = page.getByRole("button", { name: /set budget|add budget/i });

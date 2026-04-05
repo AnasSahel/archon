@@ -77,6 +77,8 @@ test.describe("Journey 2 — HITL flow: awaiting_human → approve → done", ()
     const approveBtn = page.getByRole("button", { name: /approve/i });
     if (await approveBtn.isVisible()) {
       await approveBtn.click();
+      // Confirm the approval in the 2-step HITL form
+      await page.getByRole("button", { name: /confirm approve/i }).click();
       // After approval, status should update to done or in_progress
       await expect(page.locator('span', { hasText: /done|approved|in.progress/i })).toBeVisible({ timeout: 10_000 });
     } else {
