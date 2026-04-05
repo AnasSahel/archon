@@ -23,7 +23,7 @@ app.use(
     origin: process.env.PLATFORM_URL ?? "http://localhost:3000",
     credentials: true,
     allowHeaders: ["Content-Type", "Authorization"],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
   })
 );
 
