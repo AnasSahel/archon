@@ -10,11 +10,12 @@ function getQueue(): Queue<HeartbeatJobData> {
     _queue = new Queue<HeartbeatJobData>("heartbeat", {
       connection: getRedis(),
       defaultJobOptions: {
-        // 3 retries with exponential backoff: 30s, 60s, 120s
+        // 3 retries with exponential backoff: 5s, 10s, 20s
+        // Reduced from 30s to catch transient errors quickly without 30s+ hangs
         attempts: 3,
         backoff: {
           type: "exponential",
-          delay: 30_000,
+          delay: 5_000,
         },
         removeOnComplete: { count: 100 },
         removeOnFail: { count: 500 },

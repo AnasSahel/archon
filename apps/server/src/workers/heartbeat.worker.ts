@@ -66,18 +66,23 @@ export function startHeartbeatWorker(): Worker {
     async (job: Job<HeartbeatJobData>) => {
       const { agentId, taskId } = job.data;
       const db = getDb();
+      const jobStart = Date.now();
+      console.log(`[heartbeat] job ${job.id} started — agent=${agentId} task=${taskId ?? "none"}`);
 
-      // Load agent
-      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      // Load agent + task in parallel to minimize DB round-trip latency
+      const [agentResult, taskResult] = await Promise.all([
+        db.select().from(agents).where(eq(agents.id, agentId)),
+        taskId ? db.select().from(tasks).where(eq(tasks.id, taskId)) : Promise.resolve([]),
+      ]);
+      console.log(`[heartbeat] DB load done in ${Date.now() - jobStart}ms`);
+
+      const [agent] = agentResult;
       if (!agent) {
         console.error(`[heartbeat] Agent ${agentId} not found`);
         return;
       }
 
-      // Load task (optional)
-      const task = taskId
-        ? (await db.select().from(tasks).where(eq(tasks.id, taskId)))[0] ?? null
-        : null;
+      const task = taskId ? (taskResult[0] ?? null) : null;
 
       // Skip execution if task is awaiting human review
       if (task?.status === "awaiting_human") {
@@ -219,36 +224,21 @@ export function startHeartbeatWorker(): Worker {
           const command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
 
           const workspacePath = agent.workspacePath ?? job.data.workspacePath ?? null;
-          if (workspacePath) {
-            try {
-              await writeToolPolicy({
-                companyId: agent.companyId,
-                agentId,
-                agentRole: agent.role,
-                adapterType: adapterType as AdapterType,
-                workspacePath,
-              });
-            } catch (err) {
-              console.warn(`[heartbeat] writeToolPolicy failed (non-fatal):`, err);
-            }
-          }
+          const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+          const containerTimeoutMs =
+            typeof adapterCfg["containerTimeoutMs"] === "number"
+              ? adapterCfg["containerTimeoutMs"]
+              : parseInt(process.env.AGENT_CONTAINER_TIMEOUT_MS ?? "600000", 10);
 
-          let localEnv: Record<string, string> = {};
-          let runKeyId: string | null = null;
-          let runApiKey: string | null = null;
+          const { raw, hash, prefix } = generateRunApiKey();
+          const runApiKey = raw;
+          const runKeyId = randomUUID();
+          const keyExpiresAt = new Date(Date.now() + containerTimeoutMs + 60_000);
 
-          {
-            const { raw, hash, prefix } = generateRunApiKey();
-            runApiKey = raw;
-            runKeyId = randomUUID();
-            const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
-            const containerTimeoutMs =
-              typeof adapterCfg["containerTimeoutMs"] === "number"
-                ? adapterCfg["containerTimeoutMs"]
-                : parseInt(process.env.AGENT_CONTAINER_TIMEOUT_MS ?? "600000", 10);
-
-            const keyExpiresAt = new Date(Date.now() + containerTimeoutMs + 60_000);
-            await db.insert(agentApiKeys).values({
+          // Run API key insert and tool policy write in parallel — they are independent
+          const preSpawnStart = Date.now();
+          await Promise.all([
+            db.insert(agentApiKeys).values({
               id: runKeyId,
               agentId,
               companyId: agent.companyId,
@@ -256,18 +246,30 @@ export function startHeartbeatWorker(): Worker {
               keyPrefix: prefix,
               scopes: ["heartbeat"],
               expiresAt: keyExpiresAt,
-            });
+            }),
+            workspacePath
+              ? writeToolPolicy({
+                  companyId: agent.companyId,
+                  agentId,
+                  agentRole: agent.role,
+                  adapterType: adapterType as AdapterType,
+                  workspacePath,
+                }).catch((err) => console.warn(`[heartbeat] writeToolPolicy failed (non-fatal):`, err))
+              : Promise.resolve(),
+          ]);
+          console.log(`[heartbeat] pre-spawn setup done in ${Date.now() - preSpawnStart}ms`);
 
-            localEnv = {
-              PAPERCLIP_API_URL: `http://localhost:${process.env.PORT ?? "3010"}`,
-              PAPERCLIP_COMPANY_ID: agent.companyId,
-              PAPERCLIP_AGENT_ID: agentId,
-              PAPERCLIP_RUN_ID: heartbeatId,
-            };
-            if (taskId) localEnv.PAPERCLIP_TASK_ID = taskId;
-          }
+          const localEnv: Record<string, string> = {
+            PAPERCLIP_API_URL: `http://localhost:${process.env.PORT ?? "3010"}`,
+            PAPERCLIP_COMPANY_ID: agent.companyId,
+            PAPERCLIP_AGENT_ID: agentId,
+            PAPERCLIP_RUN_ID: heartbeatId,
+          };
+          if (taskId) localEnv.PAPERCLIP_TASK_ID = taskId;
 
           const logLines: string[] = [];
+          let firstTokenAt: number | null = null;
+          const spawnStart = Date.now();
           try {
             await runViaLocal({
               agentId,
@@ -277,6 +279,10 @@ export function startHeartbeatWorker(): Worker {
               apiKey: runApiKey ?? "",
               ...(workspacePath ? { workspacePath } : {}),
               onLog: (log) => {
+                if (firstTokenAt === null) {
+                  firstTokenAt = Date.now();
+                  console.log(`[heartbeat] first token in ${firstTokenAt - spawnStart}ms (total from job: ${firstTokenAt - jobStart}ms)`);
+                }
                 logLines.push(log);
                 dispatch({
                   type: "heartbeat_token",
@@ -298,6 +304,7 @@ export function startHeartbeatWorker(): Worker {
           resultText = logLines.join("");
           inputTokens = 0;
           outputTokens = 0;
+          console.log(`[heartbeat] local process finished in ${Date.now() - spawnStart}ms (total: ${Date.now() - jobStart}ms)`);
         } else {
           // Load agent snapshot and inject into context
           const agentSnapshot = await loadSnapshot(agentId, taskId ?? null);
