@@ -7,11 +7,13 @@ let _pglite: PGlite | null = null;
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getPGlite(): PGlite {
-  if (!_pglite)
-    _pglite = new PGlite({
-      dataDir: process.env.PGLITE_DATA_DIR ?? "./.pglite-data",
-      extensions: { vector },
-    });
+  if (!_pglite) {
+    // Explicit env var always wins; fall back to disk persistence except in test
+    const dataDir =
+      process.env.PGLITE_DATA_DIR ??
+      (process.env.NODE_ENV === "test" ? undefined : "./.pglite-data");
+    _pglite = new PGlite({ dataDir, extensions: { vector } });
+  }
   return _pglite;
 }
 
