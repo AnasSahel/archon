@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { eq, and, count } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { getDb, tasks, taskComments, auditLog, companyMembers } from "@archon/db";
+import { getDb, tasks, taskComments, auditLog, companyMembers, agents } from "@archon/db";
 import { sessionMiddleware } from "../middleware/session.js";
 import { writeAuditEntry } from "../lib/audit.js";
 import { transitionHitl } from "../lib/hitl-service.js";
@@ -228,6 +228,27 @@ tasksRouter.patch(
       actorId: user.id,
       diff,
     });
+
+    // Auto-trigger heartbeat when an agent is (re-)assigned, unless the task is terminal
+    const newAgentId = updates.agentId;
+    const finalStatus = updates.status ?? existing.status;
+    const agentChanged = newAgentId !== undefined && newAgentId !== null && newAgentId !== existing.agentId;
+    const taskIsTerminal = finalStatus === "done" || finalStatus === "cancelled";
+    if (agentChanged && !taskIsTerminal) {
+      const [assignedAgent] = await db
+        .select()
+        .from(agents)
+        .where(eq(agents.id, newAgentId!));
+      if (assignedAgent && assignedAgent.status !== "paused" && assignedAgent.status !== "terminated") {
+        await enqueueHeartbeat({
+          agentId: newAgentId!,
+          companyId,
+          taskId,
+          adapterType: assignedAgent.adapterType,
+          workspacePath: assignedAgent.workspacePath,
+        });
+      }
+    }
 
     return c.json(updated);
   }
