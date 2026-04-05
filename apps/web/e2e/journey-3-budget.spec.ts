@@ -56,8 +56,8 @@ test.describe("Journey 3 — Budget limit: agent auto-paused", () => {
       const budgetInput = page.getByLabel(/budget|amount/i).first();
       await budgetInput.fill("0.01");
       await page.getByRole("button", { name: /set|save|submit/i }).click();
-      // Verify budget was set
-      await expect(page.getByText(/0\.01|budget/i)).toBeVisible({ timeout: 10_000 });
+      // Verify budget was set — value is rendered as $0.01 in the table
+      await expect(page.getByText('$0.01')).toBeVisible({ timeout: 10_000 });
     } else {
       // Budget UI not rendered — just verify the page loads without error
       await expect(page.getByText(/budget/i).first()).toBeVisible({ timeout: 5_000 });
