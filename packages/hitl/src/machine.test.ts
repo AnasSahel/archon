@@ -39,6 +39,17 @@ describe("hitlMachine", () => {
     actor.stop();
   });
 
+  it("stays in IDLE when RESULT_READY sent without START (silent ignore)", () => {
+    // Regression guard: IDLE only handles START. Sending RESULT_READY directly must be
+    // caught by callers (hitl-service.ts bootstraps to RUNNING first for fresh tasks).
+    const reviewCtx = { ...ctx, reviewRequired: true };
+    const actor = createActor(hitlMachine, { input: reviewCtx });
+    actor.start();
+    actor.send({ type: "RESULT_READY", requiresReview: true });
+    expect(actor.getSnapshot().value).toBe("IDLE");
+    actor.stop();
+  });
+
   it("escalates on TIMEOUT", () => {
     const reviewCtx = { ...ctx, reviewRequired: true };
     const actor = createActor(hitlMachine, { input: reviewCtx });

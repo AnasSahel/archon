@@ -3,6 +3,7 @@ import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { getRedis } from "../lib/valkey.js";
 import { resolveExecutionMode } from "../runtime/execution-router.js";
 import { runViaDocker } from "../runtime/docker-runner.js";
+import { runViaLocal } from "../runtime/local-runner.js";
 import { writeToolPolicy } from "../runtime/tool-policy-writer.js";
 import { dispatch } from "@archon/notifications";
 import { getDb, agents, tasks, taskComments, heartbeats, agentApiKeys } from "@archon/db";
@@ -109,8 +110,10 @@ export function startHeartbeatWorker(): Worker {
       });
 
       const adapterType = job.data.adapterType ?? agent.adapterType;
+      const adapterCfgForMode = (agent.adapterConfig ?? {}) as Record<string, unknown>;
       const mode = await resolveExecutionMode({
         adapterType,
+        adapterConfig: adapterCfgForMode,
         ...(job.data.workspacePath !== undefined
           ? { workspacePath: job.data.workspacePath }
           : { workspacePath: agent.workspacePath }),
@@ -215,6 +218,96 @@ export function startHeartbeatWorker(): Worker {
           resultText = logLines.join("");
           // Token usage is not directly observable from container stdout in this phase.
           // The agent self-reports cost via heartbeat_completed events dispatched from inside the container.
+          inputTokens = 0;
+          outputTokens = 0;
+        } else if (mode === "local") {
+          // For claude_code in local mode, inject task context directly into the prompt so
+          // the agent does not need to call any external API (Archon exposes no Paperclip-
+          // compatible control-plane endpoints in local mode).
+          let command: string[];
+          if (adapterType === "claude_code" && task) {
+            const taskContext = task.description ?? task.title ?? "(no task description)";
+            command = [
+              "claude",
+              "--dangerously-skip-permissions",
+              "--print",
+              "-p",
+              `Complete the following task and reply with only the result:\n\n${taskContext}`,
+            ];
+          } else {
+            command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
+          }
+
+          // Generate short-lived API key for this local run
+          const { raw: runApiKey, hash, prefix } = generateRunApiKey();
+          const runKeyId = randomUUID();
+          const adapterCfg = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+          const containerTimeoutMs =
+            typeof adapterCfg["containerTimeoutMs"] === "number"
+              ? adapterCfg["containerTimeoutMs"]
+              : parseInt(process.env.AGENT_CONTAINER_TIMEOUT_MS ?? "600000", 10);
+
+          const keyExpiresAt = new Date(Date.now() + containerTimeoutMs + 60_000);
+          await db.insert(agentApiKeys).values({
+            id: runKeyId,
+            agentId,
+            companyId: agent.companyId,
+            keyHash: hash,
+            keyPrefix: prefix,
+            scopes: ["heartbeat"],
+            expiresAt: keyExpiresAt,
+          });
+
+          const workspacePath = agent.workspacePath ?? job.data.workspacePath ?? null;
+          if (workspacePath) {
+            try {
+              await writeToolPolicy({
+                companyId: agent.companyId,
+                agentId,
+                agentRole: agent.role,
+                adapterType: adapterType as AdapterType,
+                workspacePath,
+              });
+            } catch (err) {
+              console.warn(`[heartbeat] writeToolPolicy failed (non-fatal):`, err);
+            }
+          }
+
+          const localEnv: Record<string, string> = {
+            PAPERCLIP_API_URL: `http://localhost:${process.env.PORT ?? "3010"}`,
+            PAPERCLIP_COMPANY_ID: agent.companyId,
+            PAPERCLIP_AGENT_ID: agentId,
+            PAPERCLIP_RUN_ID: heartbeatId,
+          };
+          if (taskId) localEnv.PAPERCLIP_TASK_ID = taskId;
+
+          const logLines: string[] = [];
+          try {
+            await runViaLocal({
+              agentId,
+              ...(taskId !== undefined ? { taskId } : {}),
+              command,
+              env: localEnv,
+              apiKey: runApiKey,
+              ...(workspacePath ? { workspacePath } : {}),
+              onLog: (log) => {
+                logLines.push(log);
+                dispatch({
+                  type: "heartbeat_token",
+                  agentId,
+                  ...(taskId !== undefined ? { taskId } : {}),
+                  token: log,
+                });
+              },
+            });
+          } finally {
+            await db
+              .update(agentApiKeys)
+              .set({ revokedAt: new Date() })
+              .where(eq(agentApiKeys.id, runKeyId));
+          }
+
+          resultText = logLines.join("");
           inputTokens = 0;
           outputTokens = 0;
         } else {
