@@ -7,7 +7,11 @@ let _pglite: PGlite | null = null;
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getPGlite(): PGlite {
-  if (!_pglite) _pglite = new PGlite({ extensions: { vector } });
+  if (!_pglite)
+    _pglite = new PGlite({
+      dataDir: process.env.PGLITE_DATA_DIR ?? "./.pglite-data",
+      extensions: { vector },
+    });
   return _pglite;
 }
 
