@@ -64,7 +64,7 @@ test.describe("Journey 2 — HITL flow: awaiting_human → approve → done", ()
     expect(taskId).toBeTruthy();
 
     // -- Simulate task going to awaiting_human via PATCH --
-    await page.request.patch(`/api/companies/${companyId}/tasks/${taskId}`, {
+    await page.request.patch(`${SERVER_URL}/api/companies/${companyId}/tasks/${taskId}`, {
       data: { status: "awaiting_human" },
     });
 
@@ -81,7 +81,7 @@ test.describe("Journey 2 — HITL flow: awaiting_human → approve → done", ()
       await expect(page.getByText(/done|approved|in.progress/i)).toBeVisible({ timeout: 10_000 });
     } else {
       // If no approve button, manually set via API and verify the status badge updates
-      await page.request.patch(`/api/companies/${companyId}/tasks/${taskId}`, {
+      await page.request.patch(`${SERVER_URL}/api/companies/${companyId}/tasks/${taskId}`, {
         data: { status: "done" },
       });
       await page.reload();
