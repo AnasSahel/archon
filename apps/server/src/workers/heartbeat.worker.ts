@@ -216,7 +216,16 @@ export function startHeartbeatWorker(): Worker {
           inputTokens = 0;
           outputTokens = 0;
         } else if (mode === "local") {
-          const command = DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
+          // Build a dynamic prompt that injects task context so the agent knows what to do.
+          // The static DOCKER_COMMAND_MAP prompt ("use the paperclip skill") is meaningless
+          // because no such skill exists — the agent needs the actual task title + description.
+          const taskPrompt = task
+            ? `You are an AI agent (ID: ${agentId}) assigned to the following task:\n\nTitle: ${task.title}\n\nDescription:\n${task.description ?? "(no description provided)"}\n\nComplete this task. Write your response as plain text — it will be saved as your task result.`
+            : "You are an AI agent. No task is currently assigned. Perform a brief status check and report any observations.";
+          const command =
+            adapterType === "claude_code"
+              ? ["claude", "--dangerously-skip-permissions", "--print", "-p", taskPrompt]
+              : DOCKER_COMMAND_MAP[adapterType] ?? ["echo", "no command configured"];
 
           const workspacePath = agent.workspacePath ?? job.data.workspacePath ?? null;
           if (workspacePath) {
