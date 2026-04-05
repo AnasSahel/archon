@@ -135,7 +135,7 @@ test.describe("Full registration and login flow", () => {
 
     // First register
     const serverUrl =
-      process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3100";
+      process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3010";
     await page.request.post(`${serverUrl}/api/auth/sign-up/email`, {
       data: { email: signinEmail, password: testPassword, name: testName },
     });
@@ -153,7 +153,7 @@ test.describe("Full registration and login flow", () => {
     const logoutEmail = `logout-${timestamp}@example.com`;
 
     const serverUrl =
-      process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3100";
+      process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3010";
     await page.request.post(`${serverUrl}/api/auth/sign-up/email`, {
       data: { email: logoutEmail, password: testPassword, name: testName },
     });

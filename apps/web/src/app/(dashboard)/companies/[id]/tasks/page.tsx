@@ -234,10 +234,11 @@ export default function TasksPage() {
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">New task</h2>
           <form onSubmit={handleCreateTask} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="task-title" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Title <span className="text-red-500">*</span>
               </label>
               <input
+                id="task-title"
                 type="text"
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}

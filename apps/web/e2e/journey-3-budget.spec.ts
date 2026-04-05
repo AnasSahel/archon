@@ -27,7 +27,7 @@ test.describe("Journey 3 — Budget limit: agent auto-paused", () => {
     await page.goto("/companies/new");
     await page.getByLabel(/company name/i).fill(`Budget Corp ${ts}`);
     await page.getByRole("button", { name: /create/i }).click();
-    await page.waitForURL(/\/companies\/[^/]+$/, { timeout: 10_000 });
+    await page.waitForURL(/\/companies\/[a-f0-9-]{36}$/, { timeout: 10_000 });
     const companyId = page.url().split("/companies/")[1]?.split("/")[0];
     expect(companyId).toBeTruthy();
 
@@ -41,7 +41,7 @@ test.describe("Journey 3 — Budget limit: agent auto-paused", () => {
 
     // -- Navigate to budgets page --
     await page.goto(`/companies/${companyId}/budgets`);
-    await expect(page.getByText(/budget/i)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole("heading", { name: /budget/i })).toBeVisible({ timeout: 5_000 });
 
     // -- Set a very low budget ($0.01) --
     const setBudgetBtn = page.getByRole("button", { name: /set budget|add budget/i });
@@ -56,11 +56,11 @@ test.describe("Journey 3 — Budget limit: agent auto-paused", () => {
       const budgetInput = page.getByLabel(/budget|amount/i).first();
       await budgetInput.fill("0.01");
       await page.getByRole("button", { name: /set|save|submit/i }).click();
-      // Verify budget was set
-      await expect(page.getByText(/0\.01|budget/i)).toBeVisible({ timeout: 10_000 });
+      // Verify budget was set — value is rendered as $0.01 in the table
+      await expect(page.getByText('$0.01')).toBeVisible({ timeout: 10_000 });
     } else {
       // Budget UI not rendered — just verify the page loads without error
-      await expect(page.getByText(/budget/i)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByText(/budget/i).first()).toBeVisible({ timeout: 5_000 });
     }
 
     // -- Verify budget table shows something --

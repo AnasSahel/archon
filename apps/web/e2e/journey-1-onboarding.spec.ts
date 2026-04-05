@@ -36,7 +36,7 @@ test.describe("Journey 1 — Onboarding to first heartbeat result", () => {
     await page.getByRole("button", { name: /create/i }).click();
 
     // Should redirect to the new company page
-    await page.waitForURL(/\/companies\/[^/]+$/, { timeout: 10_000 });
+    await page.waitForURL(/\/companies\/[a-f0-9-]{36}$/, { timeout: 10_000 });
     const companyUrl = page.url();
     const companyId = companyUrl.split("/companies/")[1]?.split("/")[0];
     expect(companyId).toBeTruthy();
@@ -65,6 +65,6 @@ test.describe("Journey 1 — Onboarding to first heartbeat result", () => {
     // -- 5. Verify task detail opens --
     await page.getByText("Echo task").click();
     await page.waitForURL(/\/tasks\/[^/]+$/, { timeout: 5_000 });
-    await expect(page.getByText("Echo task")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Echo task" })).toBeVisible();
   });
 });

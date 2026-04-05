@@ -38,14 +38,14 @@ test.describe("Journey 2 — HITL flow: awaiting_human → approve → done", ()
       await page.goto("/companies/new");
       await page.getByLabel(/company name/i).fill(`HITL Corp ${ts}`);
       await page.getByRole("button", { name: /create/i }).click();
-      await page.waitForURL(/\/companies\/[^/]+$/, { timeout: 10_000 });
+      await page.waitForURL(/\/companies\/[a-f0-9-]{36}$/, { timeout: 10_000 });
     }
 
     // Navigate to companies list and pick the new one
     await page.goto("/companies");
     await expect(page.getByText(`HITL Corp ${ts}`)).toBeVisible({ timeout: 10_000 });
     await page.getByText(`HITL Corp ${ts}`).click();
-    await page.waitForURL(/\/companies\/[^/]+$/, { timeout: 5_000 });
+    await page.waitForURL(/\/companies\/[a-f0-9-]{36}$/, { timeout: 5_000 });
     const companyId = page.url().split("/companies/")[1]?.split("/")[0];
     expect(companyId).toBeTruthy();
 
@@ -64,28 +64,30 @@ test.describe("Journey 2 — HITL flow: awaiting_human → approve → done", ()
     expect(taskId).toBeTruthy();
 
     // -- Simulate task going to awaiting_human via PATCH --
-    await page.request.patch(`/api/companies/${companyId}/tasks/${taskId}`, {
+    await page.request.patch(`${SERVER_URL}/api/companies/${companyId}/tasks/${taskId}`, {
       data: { status: "awaiting_human" },
     });
 
     // -- Reload and verify awaiting_human badge is shown --
     await page.reload();
-    // Should show the awaiting_human status
-    await expect(page.getByText(/awaiting|review/i)).toBeVisible({ timeout: 5_000 });
+    // Should show the awaiting_human status badge (span from StatusBadge component)
+    await expect(page.locator('span', { hasText: /awaiting human/i })).toBeVisible({ timeout: 5_000 });
 
     // -- Approve the task --
     const approveBtn = page.getByRole("button", { name: /approve/i });
     if (await approveBtn.isVisible()) {
       await approveBtn.click();
+      // Confirm the approval in the 2-step HITL form
+      await page.getByRole("button", { name: /confirm approve/i }).click();
       // After approval, status should update to done or in_progress
-      await expect(page.getByText(/done|approved|in.progress/i)).toBeVisible({ timeout: 10_000 });
+      await expect(page.locator('span', { hasText: /done|approved|in.progress/i })).toBeVisible({ timeout: 10_000 });
     } else {
       // If no approve button, manually set via API and verify the status badge updates
-      await page.request.patch(`/api/companies/${companyId}/tasks/${taskId}`, {
+      await page.request.patch(`${SERVER_URL}/api/companies/${companyId}/tasks/${taskId}`, {
         data: { status: "done" },
       });
       await page.reload();
-      await expect(page.getByText(/done/i)).toBeVisible({ timeout: 5_000 });
+      await expect(page.locator('span', { hasText: /done/i })).toBeVisible({ timeout: 5_000 });
     }
   });
 });
