@@ -154,10 +154,11 @@ export default function AgentsPage() {
           <form onSubmit={handleCreateAgent} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="agent-name" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Name <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="agent-name"
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -167,10 +168,11 @@ export default function AgentsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="agent-role" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Role <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="agent-role"
                   type="text"
                   value={form.role}
                   onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
